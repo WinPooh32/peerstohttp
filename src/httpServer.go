@@ -35,7 +35,7 @@ func sendList(w http.ResponseWriter, torr *torrent.Torrent, listType, host strin
 	io.WriteString(w, renderList(host, torr, listType))
 }
 
-func handleAPI() {
+func handleAPI(cl *torrent.Client) {
 	routerAPI := mux.NewRouter()
 	routerAPI.SkipClean(true)
 
@@ -43,7 +43,7 @@ func handleAPI() {
 		vars := mux.Vars(r)
 		magnet := "magnet" + strings.TrimLeft(r.URL.Path+"?"+r.URL.RawQuery, "/api/"+vars["playlist"]+"/magnet/")
 
-		if t := addMagnet(magnet); t != nil {
+		if t := addMagnet(magnet, cl); t != nil {
 			sendList(w, t, vars["playlist"], r.Host)
 		}
 	})
@@ -52,7 +52,7 @@ func handleAPI() {
 		vars := mux.Vars(r)
 		magnet := "magnet:?xt=urn:btih:" + vars["hash"]
 
-		if t := addMagnet(magnet); t != nil {
+		if t := addMagnet(magnet, cl); t != nil {
 			sendList(w, t, vars["playlist"], r.Host)
 		}
 	})
@@ -87,17 +87,18 @@ func handleAPI() {
 	http.Handle(urlAPI, routerAPI)
 }
 
-func startHTTPServer(addr string) *http.Server {
+func startHTTPServer(addr string, cl *torrent.Client) *http.Server {
 	srv := &http.Server{
 		Addr: addr,
 	}
 
-	handleAPI()
+	handleAPI(cl)
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil {
 			// cannot panic, because this probably is an intentional close
 			log.Printf("Httpserver: ListenAndServe() error: %s", err)
+			procQuit <- true
 		}
 	}()
 

@@ -20,23 +20,26 @@ var torrents map[string]*torrent.Torrent
 var fileClients map[string]int
 var fileStopping map[*torrent.File]chan bool
 
-//torrent client
-var torrClient *torrent.Client
-
-func init() {
+func startTorrent(settings serviceSettings) *torrent.Client {
 	torrents = make(map[string]*torrent.Torrent)
 	fileClients = make(map[string]int)
 	fileStopping = make(map[*torrent.File]chan bool)
 
 	cfg := torrent.NewDefaultClientConfig()
-	cfg.DefaultStorage = storage.NewMMap("./")
+	cfg.DefaultStorage = storage.NewMMap(*settings.DownloadDir)
+	cfg.DataDir = *settings.DownloadDir
+	cfg.EstablishedConnsPerTorrent = *settings.MaxConnections
+	cfg.NoDHT = *settings.NoDHT
+	cfg.ForceEncryption = *settings.ForceEncryption
+	//FIXME up/download speed limitations
 
 	cl, err := torrent.NewClient(cfg)
-	torrClient = cl
 
 	if err != nil {
-		panic(err)
+		procError <- err.Error()
 	}
+
+	return cl
 }
 
 func incFileClients(path string) int {
@@ -61,7 +64,7 @@ func decFileClients(path string) int {
 	}
 }
 
-func addMagnet(uri string) *torrent.Torrent {
+func addMagnet(uri string, cl *torrent.Client) *torrent.Torrent {
 	spec, err := torrent.TorrentSpecFromMagnetURI(uri)
 	if err != nil {
 		log.Println(err)
@@ -73,7 +76,7 @@ func addMagnet(uri string) *torrent.Torrent {
 		return t
 	}
 
-	if t, err := torrClient.AddMagnet(uri); err != nil {
+	if t, err := cl.AddMagnet(uri); err != nil {
 		log.Panicln(err)
 		return nil
 	} else {
