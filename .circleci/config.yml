@@ -23,6 +23,7 @@ jobs:
 
       # specify any bash command here prefixed with `run: `
       - run: go get -v ./...
+      - run: go get -v github.com/anacrolix/utp
       - run:
           name: Creating Artifacts
           command: |
