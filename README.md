@@ -36,15 +36,17 @@ $ vlc http://127.0.0.1:8080/api/m3u/hash/08ada5a7a6183aae1e09d831df6748d566095a1
 ```
 
 ## Build steps
-Download dependencies:
 ```
-$ cd Go-PeersToHTTP/src
-$ go get -v -d ./...
+$ git clone https://github.com/WinPooh32/peerstohttp.git
+$ cd peerstohttp
+$ go install .
 ```
-Build:
+Run:
 ```
-$ go build -o Go-PeersToHttp
+$GOPATH/bin/peerstohttp
 ```
+
+By default $GOPATH is "~/go"
 
 ## License
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2FWinPooh32%2Fpeerstohttp.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2FWinPooh32%2Fpeerstohttp?ref=badge_large)
