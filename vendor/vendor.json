@@ -21,6 +21,12 @@
 			"revisionTime": "2019-01-24T22:52:42Z"
 		},
 		{
+			"checksumSHA1": "xPKx0L2mGhLvaENoET/Rw7r6TpI=",
+			"path": "github.com/anacrolix/envpprof",
+			"revision": "323002cec2fa42996812c507f4cab95ad9efacbc",
+			"revisionTime": "2018-04-04T06:54:16Z"
+		},
+		{
 			"checksumSHA1": "tEd37zKcM3qviRlo87+YzccJeZ4=",
 			"path": "github.com/anacrolix/go-libutp",
 			"revision": "aebbeb60ea05ff6da8454a6afbbb961490ac5b1f",
@@ -144,7 +150,8 @@
 			"checksumSHA1": "P9AakBud9ai3ph0B9H+hjqc1Y20=",
 			"path": "github.com/anacrolix/sync",
 			"revision": "44578de4e778a60bb7a9c15ab60b3f0b0311a53a",
-			"revisionTime": "2018-08-08T01:06:31Z"
+			"revisionTime": "2018-08-08T01:06:31Z",
+			"tree": true
 		},
 		{
 			"checksumSHA1": "kpPJeYUiCFoPcthi6G+DeDouBdM=",
@@ -205,6 +212,13 @@
 			"path": "github.com/anacrolix/torrent/tracker",
 			"revision": "b102ce901ad9f1e7f45ac81ea2bd47e9bf449286",
 			"revisionTime": "2019-01-30T06:54:02Z"
+		},
+		{
+			"checksumSHA1": "BSpJAC/4AJdHrNQnnjVCHzWRrr8=",
+			"path": "github.com/anacrolix/utp",
+			"revision": "9e0e1d1d0572f5a09a669d4ea0372d8e8078dcc9",
+			"revisionTime": "2018-02-19T06:06:59Z",
+			"tree": true
 		},
 		{
 			"checksumSHA1": "20Pind5XCrfZL/F0oibWfd9gotA=",
@@ -270,7 +284,8 @@
 			"checksumSHA1": "GgSlQYD/MBe2lqMqF6BP51d+67o=",
 			"path": "github.com/huandu/xstrings",
 			"revision": "8bbcf2f9ccb55755e748b7644164cd4bdce94c1d",
-			"revisionTime": "2018-09-06T15:17:51Z"
+			"revisionTime": "2018-09-06T15:17:51Z",
+			"tree": true
 		},
 		{
 			"checksumSHA1": "MT87f6ya9FoWNJJOs8t9+u3+Iqk=",
