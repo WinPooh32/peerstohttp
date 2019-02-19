@@ -13,8 +13,6 @@ jobs:
       - checkout
 
       # specify any bash command here prefixed with `run: `
-      - run: go get -u github.com/kardianos/govendor
-      - run: go run github.com/kardianos/govendor
       - run:
           name: Creating Artifacts
           command: |
@@ -25,6 +23,6 @@ jobs:
       - run: GOOS=linux GOARCH=amd64 go build -o /tmp/artifacts/peerstohttp.linux.amd64 ./...
       - run: GOOS=linux GOARCH=arm GOARM=6 go build -o /tmp/artifacts/peerstohttp.linux.arm6 ./...
       - run: GOOS=linux GOARCH=arm GOARM=7 go build -o /tmp/artifacts/peerstohttp.linux.arm7 ./...
-      - run: go run github.com/kardianos/govendor test +local
+      - run: go test
       - store_artifacts:
           path: /tmp/artifacts
