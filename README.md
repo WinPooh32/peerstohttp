@@ -41,16 +41,24 @@ $ vlc http://127.0.0.1:8080/api/m3u/hash/08ada5a7a6183aae1e09d831df6748d566095a1
 ```
 
 ## Build steps
+Build in vendor mode:
 ```
-$ go get -u github.com/WinPooh32/peerstohttp
+go build -mod=vendor
 ```
+
+Using GOPATH:
+```
+go get -u github.com/WinPooh32/peerstohttp
+```
+
 Run:
 ```
 $GOPATH/bin/peerstohttp
 ```
+
 or:
 ```
-$ go run github.com/WinPooh32/peerstohttp
+go run github.com/WinPooh32/peerstohttp
 ```
 By default $GOPATH is "~/go"
 
