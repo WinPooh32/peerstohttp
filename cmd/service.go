@@ -12,7 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-const defaultShutdownTimeout = 60 * time.Second
+const defaultShutdownTimeout = 10 * time.Second
 
 func stopSignal() <-chan os.Signal {
 	c := make(chan os.Signal)

@@ -1,6 +1,7 @@
 package http
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
@@ -70,15 +71,27 @@ func (h *handle) hash(w http.ResponseWriter, r *http.Request) {
 }
 
 func renderList(w http.ResponseWriter, r *http.Request, t *torrent.Torrent, list listType) {
-	var files = t.Info().Files
+	var info = t.Info()
+
+	var hash = t.InfoHash().String()
+	var name = t.Name()
 
 	switch list {
+	case listM3U:
+		w.Header().Set("Content-Type", "application/mpegurl")
+		w.WriteHeader(http.StatusOK)
+		w.Write(renderM3Ulinks(r.URL, hash, name, info))
+
 	case listHTML:
-		w.Write(renderHTMLlinks(t.InfoHash().String(), t.Name(), files))
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusOK)
+		w.Write(renderHTMLlinks(hash, name, info))
+
 	case listJSON:
 		fallthrough
+
 	default:
-		render.JSON(w, r, files)
+		render.JSON(w, r, info.Files)
 	}
 }
 
@@ -119,13 +132,18 @@ func (h *handle) content(w http.ResponseWriter, r *http.Request) {
 
 	var file *torrent.File
 	ok = false
-	for _, f := range t.Files() {
-		var p = f.Path()
-		if p == path {
-			file = f
-			ok = true
-			break
+
+	if t.Info().IsDir() {
+		for _, f := range t.Files() {
+			var p = f.Path()
+			if p == path {
+				file = f
+				ok = true
+				break
+			}
 		}
+	} else if ok = (path == t.Info().Name); ok {
+		file = t.Files()[0]
 	}
 
 	if !ok || file == nil {
@@ -231,29 +249,79 @@ func addNewTorrentMagnet(ctx context.Context, app *app.App, magnetURI string) (*
 	return t, t != nil
 }
 
-func renderHTMLlinks(hash string, torrName string, files []metainfo.FileInfo) []byte {
-	var b []byte
+func renderHTMLlinks(hash string, torrName string, info *metainfo.Info) []byte {
+	var files = info.Files
+	var playlist bytes.Buffer
 
-	b = append(b, []byte(` <!DOCTYPE html>
+	playlist.WriteString(` <!DOCTYPE html>
 <html>
 <head>
 <title>Title of the document</title>
 </head>
 
 <body>
-
-`)...)
-
-	for _, fi := range files {
-		var escaped = joinEscapedPath(append([]string{torrName}, fi.Path...))
-		//var escaped = url.PathEscape(torrName + "/" + path)
-		var link = fmt.Sprintf("<a href=\"/content/%s/%s\">%s</a><br>\n", hash, escaped, strings.Join(fi.Path, "/"))
-
-		b = append(b, []byte(link)...)
+`)
+	if !info.IsDir() {
+		formatLinkHTML(hash, torrName, nil, &playlist)
 	}
 
-	return append(b, []byte(`</body>
-</html>`)...)
+	for _, fi := range files {
+		formatLinkHTML(hash, torrName, fi.Path, &playlist)
+	}
+
+	playlist.WriteString(`</body>
+</html>`)
+
+	return playlist.Bytes()
+}
+
+func renderM3Ulinks(req *url.URL, hash string, torrName string, info *metainfo.Info) []byte {
+	var playlist bytes.Buffer
+	var files = info.Files
+
+	playlist.WriteString("#EXTM3U\r\n")
+	playlist.WriteString("#EXTENC: UTF-8\r\n")
+
+	if !info.IsDir() {
+		formatLinkM3U(req.Scheme, req.Host, hash, torrName, nil, &playlist)
+	}
+
+	for _, fi := range files {
+		formatLinkM3U(req.Scheme, req.Host, hash, torrName, fi.Path, &playlist)
+	}
+
+	return playlist.Bytes()
+}
+
+func formatLinkHTML(hash string, torrName string, path []string, out *bytes.Buffer) {
+	var name string
+	if len(path) > 0 {
+		name = path[len(path)-1]
+	} else {
+		name = torrName
+	}
+
+	var link = url.URL{
+		Path: "/content/" + joinEscapedPath(append([]string{hash, torrName}, path...)),
+	}
+	out.WriteString(`<a href="` + link.String() + `">` + name + "</a><br>\n")
+}
+
+func formatLinkM3U(scheme, host, hash string, torrName string, path []string, out *bytes.Buffer) {
+	var name string
+	if len(path) > 0 {
+		name = path[len(path)-1]
+	} else {
+		name = torrName
+	}
+
+	var link = url.URL{
+		Scheme: scheme,
+		Host:   host,
+		Path:   "/content/" + joinEscapedPath(append([]string{hash, torrName}, path...)),
+	}
+	out.WriteString("#EXTINF:-1," + name + "\r\n")
+	out.WriteString(link.RequestURI() + "\r\n")
 }
 
 func joinEscapedPath(elems []string) string {
