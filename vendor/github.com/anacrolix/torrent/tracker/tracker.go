@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/anacrolix/dht/krpc"
+	"github.com/anacrolix/dht/v2/krpc"
 )
 
 // Marshalled as binary by the UDP client, so be careful making changes.
@@ -14,7 +14,7 @@ type AnnounceRequest struct {
 	InfoHash   [20]byte
 	PeerId     [20]byte
 	Downloaded int64
-	Left       uint64
+	Left       int64 // If less than 0, math.MaxInt64 will be used for HTTP trackers instead.
 	Uploaded   int64
 	// Apparently this is optional. None can be used for announces done at
 	// regular intervals.

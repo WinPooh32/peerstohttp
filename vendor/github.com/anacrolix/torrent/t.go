@@ -1,20 +1,20 @@
 package torrent
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/anacrolix/missinggo/pubsub"
+
 	"github.com/anacrolix/torrent/metainfo"
 )
 
-// The torrent's infohash. This is fixed and cannot change. It uniquely
-// identifies a torrent.
+// The Torrent's infohash. This is fixed and cannot change. It uniquely identifies a torrent.
 func (t *Torrent) InfoHash() metainfo.Hash {
 	return t.infoHash
 }
 
-// Returns a channel that is closed when the info (.Info()) for the torrent
-// has become available.
+// Returns a channel that is closed when the info (.Info()) for the torrent has become available.
 func (t *Torrent) GotInfo() <-chan struct{} {
 	t.cl.lock()
 	defer t.cl.unlock()
@@ -28,8 +28,8 @@ func (t *Torrent) Info() *metainfo.Info {
 	return t.info
 }
 
-// Returns a Reader bound to the torrent's data. All read calls block until
-// the data requested is actually available.
+// Returns a Reader bound to the torrent's data. All read calls block until the data requested is
+// actually available. Note that you probably want to ensure the Torrent Info is available first.
 func (t *Torrent) NewReader() Reader {
 	r := reader{
 		mu:        t.cl.locker(),
@@ -41,10 +41,19 @@ func (t *Torrent) NewReader() Reader {
 	return &r
 }
 
-// Returns the state of pieces of the torrent. They are grouped into runs of
-// same state. The sum of the state run lengths is the number of pieces
-// in the torrent.
-func (t *Torrent) PieceStateRuns() []PieceStateRun {
+type PieceStateRuns []PieceStateRun
+
+func (me PieceStateRuns) String() string {
+	ss := make([]string, 0, len(me))
+	for _, psr := range me {
+		ss = append(ss, psr.String())
+	}
+	return strings.Join(ss, " ")
+}
+
+// Returns the state of pieces of the torrent. They are grouped into runs of same state. The sum of
+// the state run-lengths is the number of pieces in the torrent.
+func (t *Torrent) PieceStateRuns() PieceStateRuns {
 	t.cl.rLock()
 	defer t.cl.rUnlock()
 	return t.pieceStateRuns()
@@ -106,16 +115,17 @@ func (t *Torrent) Seeding() bool {
 // Clobbers the torrent display name. The display name is used as the torrent
 // name if the metainfo is not available.
 func (t *Torrent) SetDisplayName(dn string) {
-	t.cl.lock()
-	defer t.cl.unlock()
-	t.setDisplayName(dn)
+	t.nameMu.Lock()
+	defer t.nameMu.Unlock()
+	if t.haveInfo() {
+		return
+	}
+	t.displayName = dn
 }
 
 // The current working name for the torrent. Either the name in the info dict,
 // or a display name given such as by the dn value in a magnet link, or "".
 func (t *Torrent) Name() string {
-	t.cl.lock()
-	defer t.cl.unlock()
 	return t.name()
 }
 
@@ -186,9 +196,15 @@ func (t *Torrent) initFiles() {
 	var offset int64
 	t.files = new([]*File)
 	for _, fi := range t.info.UpvertedFiles() {
+		var path []string
+		if len(fi.PathUTF8) != 0 {
+			path = fi.PathUTF8
+		} else {
+			path = fi.Path
+		}
 		*t.files = append(*t.files, &File{
 			t,
-			strings.Join(append([]string{t.info.Name}, fi.Path...), "/"),
+			strings.Join(append([]string{t.info.Name}, path...), "/"),
 			offset,
 			fi.Length,
 			fi,
@@ -221,9 +237,10 @@ func (t *Torrent) DownloadAll() {
 func (t *Torrent) String() string {
 	s := t.name()
 	if s == "" {
-		s = t.infoHash.HexString()
+		return t.infoHash.HexString()
+	} else {
+		return strconv.Quote(s)
 	}
-	return s
 }
 
 func (t *Torrent) AddTrackers(announceList [][]string) {
@@ -233,7 +250,13 @@ func (t *Torrent) AddTrackers(announceList [][]string) {
 }
 
 func (t *Torrent) Piece(i pieceIndex) *Piece {
-	t.cl.lock()
-	defer t.cl.unlock()
-	return &t.pieces[i]
+	return t.piece(i)
+}
+
+func (t *Torrent) PeerConns() []*PeerConn {
+	ret := make([]*PeerConn, 0, len(t.conns))
+	for c := range t.conns {
+		ret = append(ret, c)
+	}
+	return ret
 }

@@ -5,18 +5,20 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"time"
 
-	"github.com/anacrolix/dht/krpc"
+	"github.com/anacrolix/dht/v2/krpc"
 	"github.com/anacrolix/missinggo/httptoo"
+
 	"github.com/anacrolix/torrent/bencode"
 )
 
-type httpResponse struct {
+type HttpResponse struct {
 	FailureReason string `bencode:"failure reason"`
 	Interval      int32  `bencode:"interval"`
 	TrackerId     string `bencode:"tracker id"`
@@ -54,7 +56,7 @@ func (me *Peers) UnmarshalBencode(b []byte) (err error) {
 		vars.Add("http responses with list peers", 1)
 		for _, i := range v {
 			var p Peer
-			p.fromDictInterface(i.(map[string]interface{}))
+			p.FromDictInterface(i.(map[string]interface{}))
 			*me = append(*me, p)
 		}
 		return
@@ -74,7 +76,16 @@ func setAnnounceParams(_url *url.URL, ar *AnnounceRequest, opts Announce) {
 	q.Set("port", fmt.Sprintf("%d", ar.Port))
 	q.Set("uploaded", strconv.FormatInt(ar.Uploaded, 10))
 	q.Set("downloaded", strconv.FormatInt(ar.Downloaded, 10))
-	q.Set("left", strconv.FormatUint(ar.Left, 10))
+
+	// The AWS S3 tracker returns "400 Bad Request: left(-1) was not in the valid range 0 -
+	// 9223372036854775807" if left is out of range, or "500 Internal Server Error: Internal Server
+	// Error" if omitted entirely.
+	left := ar.Left
+	if left < 0 {
+		left = math.MaxInt64
+	}
+	q.Set("left", strconv.FormatInt(left, 10))
+
 	if ar.Event != None {
 		q.Set("event", ar.Event.String())
 	}
@@ -113,6 +124,7 @@ func announceHTTP(opt Announce, _url *url.URL) (ret AnnounceResponse, err error)
 				InsecureSkipVerify: true,
 				ServerName:         opt.ServerName,
 			},
+			DisableKeepAlives: true,
 		},
 	}).Do(req)
 	if err != nil {
@@ -125,7 +137,7 @@ func announceHTTP(opt Announce, _url *url.URL) (ret AnnounceResponse, err error)
 		err = fmt.Errorf("response from tracker: %s: %s", resp.Status, buf.String())
 		return
 	}
-	var trackerResponse httpResponse
+	var trackerResponse HttpResponse
 	err = bencode.Unmarshal(buf.Bytes(), &trackerResponse)
 	if _, ok := err.(bencode.ErrUnusedTrailingBytes); ok {
 		err = nil

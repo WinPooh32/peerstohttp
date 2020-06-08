@@ -6,18 +6,19 @@ import (
 	"time"
 
 	"github.com/anacrolix/missinggo/expect"
+	"go.etcd.io/bbolt"
+
 	"github.com/anacrolix/torrent/metainfo"
-	"github.com/boltdb/bolt"
 )
 
 const (
 	// Chosen to match the usual chunk size in a torrent client. This way,
-	// most chunk writes are to exactly one full item in bolt DB.
+	// most chunk writes are to exactly one full item in bbolt DB.
 	chunkSize = 1 << 14
 )
 
 type boltDBClient struct {
-	db *bolt.DB
+	db *bbolt.DB
 }
 
 type boltDBTorrent struct {
@@ -25,8 +26,8 @@ type boltDBTorrent struct {
 	ih metainfo.Hash
 }
 
-func NewBoltDB(filePath string) ClientImpl {
-	db, err := bolt.Open(filepath.Join(filePath, "bolt.db"), 0600, &bolt.Options{
+func NewBoltDB(filePath string) ClientImplCloser {
+	db, err := bbolt.Open(filepath.Join(filePath, "bolt.db"), 0600, &bbolt.Options{
 		Timeout: time.Second,
 	})
 	expect.Nil(err)

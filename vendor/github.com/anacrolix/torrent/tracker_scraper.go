@@ -8,17 +8,15 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/anacrolix/dht/krpc"
-	"github.com/anacrolix/missinggo"
+	"github.com/anacrolix/dht/v2/krpc"
+
 	"github.com/anacrolix/torrent/tracker"
 )
 
 // Announces a torrent to a tracker at regular intervals, when peers are
 // required.
 type trackerScraper struct {
-	u url.URL
-	// Causes the trackerScraper to stop running.
-	stop         missinggo.Event
+	u            url.URL
 	t            *Torrent
 	lastAnnounce trackerAnnounceResult
 }
@@ -96,19 +94,20 @@ func (me *trackerScraper) trackerUrl(ip net.IP) string {
 
 // Return how long to wait before trying again. For most errors, we return 5
 // minutes, a relatively quick turn around for DNS changes.
-func (me *trackerScraper) announce() (ret trackerAnnounceResult) {
+func (me *trackerScraper) announce(event tracker.AnnounceEvent) (ret trackerAnnounceResult) {
 	defer func() {
 		ret.Completed = time.Now()
 	}()
-	ret.Interval = 5 * time.Minute
+	ret.Interval = time.Minute
 	ip, err := me.getIp()
 	if err != nil {
 		ret.Err = fmt.Errorf("error getting ip: %s", err)
 		return
 	}
 	me.t.cl.lock()
-	req := me.t.announceRequest()
+	req := me.t.announceRequest(event)
 	me.t.cl.unlock()
+	//log.Printf("announcing %s %s to %q", me.t, req.Event, me.u.String())
 	res, err := tracker.Announce{
 		HTTPProxy:  me.t.cl.config.HTTPProxy,
 		UserAgent:  me.t.cl.config.HTTPUserAgent,
@@ -131,8 +130,13 @@ func (me *trackerScraper) announce() (ret trackerAnnounceResult) {
 }
 
 func (me *trackerScraper) Run() {
+	defer me.announceStopped()
+	// make sure first announce is a "started"
+	e := tracker.Started
 	for {
-		ar := me.announce()
+		ar := me.announce(e)
+		// after first announce, get back to regular "none"
+		e = tracker.None
 		me.t.cl.lock()
 		me.lastAnnounce = ar
 		me.t.cl.unlock()
@@ -155,11 +159,13 @@ func (me *trackerScraper) Run() {
 		select {
 		case <-me.t.closed.LockedChan(me.t.cl.locker()):
 			return
-		case <-me.stop.LockedChan(me.t.cl.locker()):
-			return
 		case <-wantPeers:
 			goto wait
 		case <-time.After(time.Until(ar.Completed.Add(interval))):
 		}
 	}
+}
+
+func (me *trackerScraper) announceStopped() {
+	me.announce(tracker.Stopped)
 }

@@ -1,7 +1,8 @@
 package torrent
 
 import (
-	"github.com/anacrolix/dht/krpc"
+	"github.com/anacrolix/dht/v2/krpc"
+
 	"github.com/anacrolix/torrent/peer_protocol"
 	"github.com/anacrolix/torrent/tracker"
 )
@@ -23,9 +24,8 @@ func (me *Peers) AppendFromPex(nas []krpc.NodeAddr, fs []peer_protocol.PexPeerFl
 func (ret Peers) AppendFromTracker(ps []tracker.Peer) Peers {
 	for _, p := range ps {
 		_p := Peer{
-			IP:     p.IP,
-			Port:   p.Port,
-			Source: peerSourceTracker,
+			Addr:   ipPortAddr{p.IP, p.Port},
+			Source: PeerSourceTracker,
 		}
 		copy(_p.Id[:], p.ID)
 		ret = append(ret, _p)

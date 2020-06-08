@@ -3,6 +3,8 @@ package torrent
 import (
 	"strings"
 
+	"github.com/anacrolix/missinggo/v2/bitmap"
+
 	"github.com/anacrolix/torrent/metainfo"
 )
 
@@ -38,6 +40,52 @@ func (f File) Path() string {
 // The file's length in bytes.
 func (f *File) Length() int64 {
 	return f.length
+}
+
+// Number of bytes of the entire file we have completed. This is the sum of
+// completed pieces, and dirtied chunks of incomplete pieces.
+func (f *File) BytesCompleted() int64 {
+	f.t.cl.rLock()
+	defer f.t.cl.rUnlock()
+	return f.bytesCompleted()
+}
+
+func (f *File) bytesCompleted() int64 {
+	return f.length - f.bytesLeft()
+}
+
+func fileBytesLeft(
+	torrentUsualPieceSize int64,
+	fileFirstPieceIndex int,
+	fileEndPieceIndex int,
+	fileTorrentOffset int64,
+	fileLength int64,
+	torrentCompletedPieces bitmap.Bitmap,
+) (left int64) {
+	numPiecesSpanned := fileEndPieceIndex - fileFirstPieceIndex
+	switch numPiecesSpanned {
+	case 0:
+	case 1:
+		if !torrentCompletedPieces.Get(fileFirstPieceIndex) {
+			left += fileLength
+		}
+	default:
+		if !torrentCompletedPieces.Get(fileFirstPieceIndex) {
+			left += torrentUsualPieceSize - (fileTorrentOffset % torrentUsualPieceSize)
+		}
+		if !torrentCompletedPieces.Get(fileEndPieceIndex - 1) {
+			left += fileTorrentOffset + fileLength - int64(fileEndPieceIndex-1)*torrentUsualPieceSize
+		}
+		completedMiddlePieces := torrentCompletedPieces.Copy()
+		completedMiddlePieces.RemoveRange(0, fileFirstPieceIndex+1)
+		completedMiddlePieces.RemoveRange(fileEndPieceIndex-1, bitmap.ToEnd)
+		left += int64(numPiecesSpanned-2-completedMiddlePieces.Len()) * torrentUsualPieceSize
+	}
+	return
+}
+
+func (f *File) bytesLeft() (left int64) {
+	return fileBytesLeft(int64(f.t.usualPieceSize()), f.firstPieceIndex(), f.endPieceIndex(), f.offset, f.length, f.t._completedPieces)
 }
 
 // The relative file path for a multi-file torrent, and the torrent name for a
@@ -126,6 +174,7 @@ func (f *File) Priority() piecePriority {
 	return f.prio
 }
 
+// Returns the index of the first piece containing data for the file.
 func (f *File) firstPieceIndex() pieceIndex {
 	if f.t.usualPieceSize() == 0 {
 		return 0
@@ -133,9 +182,10 @@ func (f *File) firstPieceIndex() pieceIndex {
 	return pieceIndex(f.offset / int64(f.t.usualPieceSize()))
 }
 
+// Returns the index of the piece after the last one containing data for the file.
 func (f *File) endPieceIndex() pieceIndex {
 	if f.t.usualPieceSize() == 0 {
 		return 0
 	}
-	return pieceIndex((f.offset+f.length-1)/int64(f.t.usualPieceSize())) + 1
+	return pieceIndex((f.offset + f.length + int64(f.t.usualPieceSize()) - 1) / int64(f.t.usualPieceSize()))
 }

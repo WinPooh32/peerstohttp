@@ -3,7 +3,7 @@ package tracker
 import (
 	"net"
 
-	"github.com/anacrolix/dht/krpc"
+	"github.com/anacrolix/dht/v2/krpc"
 )
 
 type Peer struct {
@@ -13,9 +13,11 @@ type Peer struct {
 }
 
 // Set from the non-compact form in BEP 3.
-func (p *Peer) fromDictInterface(d map[string]interface{}) {
+func (p *Peer) FromDictInterface(d map[string]interface{}) {
 	p.IP = net.ParseIP(d["ip"].(string))
-	p.ID = []byte(d["peer id"].(string))
+	if _, ok := d["peer id"]; ok {
+		p.ID = []byte(d["peer id"].(string))
+	}
 	p.Port = int(d["port"].(int64))
 }
 
