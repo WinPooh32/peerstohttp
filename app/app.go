@@ -8,6 +8,7 @@ import (
 
 	anacrolixlog "github.com/anacrolix/log"
 	"github.com/anacrolix/torrent"
+	"golang.org/x/time/rate"
 
 	"github.com/WinPooh32/peerstohttp/settings"
 )
@@ -43,17 +44,30 @@ func New(service *settings.Settings) (*App, error) {
 		cfg.DataDir = *service.DownloadDir
 	}
 
-	cfg.TorrentPeersHighWater = *service.MaxConnections
-	cfg.TorrentPeersLowWater = *service.MaxConnections / 2
+	// Rate limits.
+	const kib = 1 << 10
+
+	if *service.DownloadRate != 0 {
+		cfg.DownloadRateLimiter = limit(*service.DownloadRate * kib)
+	}
+
+	if *service.UploadRate != 0 {
+		cfg.UploadRateLimiter = limit(*service.DownloadRate * kib)
+	}
+
+	cfg.EstablishedConnsPerTorrent = *service.MaxConnections
+	cfg.TorrentPeersLowWater = *service.MaxConnections
 
 	cfg.NoDHT = *service.NoDHT
 	cfg.Seed = true
 
 	// Torrent debug.
-	cfg.Debug = *service.TorrentDebug
+	cfg.Debug = false
 	if !*service.TorrentDebug {
 		cfg.Logger = anacrolixlog.Discard
 	}
+
+	cfg.DefaultRequestStrategy = torrent.RequestStrategyFastest()
 
 	client, err := torrent.NewClient(cfg)
 	if err != nil {
@@ -97,4 +111,19 @@ func (app *App) Cleanup() error {
 	}
 
 	return nil
+}
+
+// https://gitlab.com/axet/libtorrent/-/blob/master/libtorrent.go
+func limit(kbps int) *rate.Limiter {
+	var l = rate.NewLimiter(rate.Inf, 0)
+
+	if kbps > 0 {
+		b := kbps
+		if b < 16*1024 {
+			b = 16 * 1024
+		}
+		l = rate.NewLimiter(rate.Limit(kbps), b)
+	}
+
+	return l
 }
