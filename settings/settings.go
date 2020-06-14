@@ -5,6 +5,7 @@ import "flag"
 type Settings struct {
 	Host            *string
 	Port            *int
+	TorrPort        *int
 	DownloadDir     *string
 	DownloadRate    *int
 	UploadRate      *int
@@ -21,10 +22,11 @@ func (s *Settings) parse() {
 	s.Port = flag.Int("port", 80, "listening port")
 
 	// Torrent
+	s.TorrPort = flag.Int("port-torr", 0, "listening port for torrent")
 	s.DownloadDir = flag.String("dir", "", "where files will be downloaded to")
 	s.DownloadRate = flag.Int("up-rate", 0, "download speed rate in kib/s")
 	s.UploadRate = flag.Int("down-rate", 0, "upload speed rate in kib/s")
-	s.MaxConnections = flag.Int("max-connections", 20, "max connections per torrent")
+	s.MaxConnections = flag.Int("max-connections", 50, "max connections per torrent")
 	s.NoDHT = flag.Bool("no-dht", false, "disable dht")
 	s.ForceEncryption = flag.Bool("force-encryption", false, "force encryption")
 

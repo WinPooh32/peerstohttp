@@ -19,6 +19,7 @@ type App struct {
 	torrents map[string]*torrent.Torrent
 	mu       sync.RWMutex
 
+	// Path to temporary data folder.
 	tmp string
 }
 
@@ -27,10 +28,10 @@ func New(service *settings.Settings) (*App, error) {
 	var tmp string
 	var cfg *torrent.ClientConfig = torrent.NewDefaultClientConfig()
 
-	if !*service.TorrentDebug {
-		cfg.Logger = anacrolixlog.Discard
-	}
+	// Bind port.
+	cfg.ListenPort = *service.TorrPort
 
+	// Download directory.
 	if *service.DownloadDir == "" {
 		tmp, err = ioutil.TempDir("", "peerstohttp")
 		if err != nil {
@@ -42,8 +43,17 @@ func New(service *settings.Settings) (*App, error) {
 		cfg.DataDir = *service.DownloadDir
 	}
 
-	// Bind any free port.
-	cfg.ListenPort = 0
+	cfg.TorrentPeersHighWater = *service.MaxConnections
+	cfg.TorrentPeersLowWater = *service.MaxConnections / 2
+
+	cfg.NoDHT = *service.NoDHT
+	cfg.Seed = true
+
+	// Torrent debug.
+	cfg.Debug = *service.TorrentDebug
+	if !*service.TorrentDebug {
+		cfg.Logger = anacrolixlog.Discard
+	}
 
 	client, err := torrent.NewClient(cfg)
 	if err != nil {
@@ -78,6 +88,7 @@ func (app *App) Torrent(hash string) (*torrent.Torrent, bool) {
 func (app *App) Cleanup() error {
 	var err error
 
+	// Remove temporary data folder if required.
 	if app.tmp != "" {
 		err = os.RemoveAll(app.tmp)
 		if err != nil {
