@@ -1,4 +1,5 @@
 # github.com/RoaringBitmap/roaring v0.4.21
+## explicit
 github.com/RoaringBitmap/roaring
 # github.com/anacrolix/dht/v2 v2.5.1-0.20200317023935-129f05e9b752
 github.com/anacrolix/dht/v2
@@ -31,6 +32,7 @@ github.com/anacrolix/missinggo/v2/iter
 github.com/anacrolix/missinggo/v2/prioritybitmap
 github.com/anacrolix/missinggo/v2/resource
 # github.com/anacrolix/mmsg v1.0.0
+## explicit
 github.com/anacrolix/mmsg
 github.com/anacrolix/mmsg/socket
 # github.com/anacrolix/multiless v0.0.0-20191223025854-070b7994e841
@@ -74,6 +76,7 @@ github.com/edsrzf/mmap-go
 # github.com/elliotchance/orderedmap v1.2.0
 github.com/elliotchance/orderedmap
 # github.com/glycerine/go-unsnap-stream v0.0.0-20190901134440-81cf024a9e0a
+## explicit
 github.com/glycerine/go-unsnap-stream
 # github.com/go-chi/chi v4.1.2+incompatible
 ## explicit
@@ -108,6 +111,7 @@ github.com/rs/zerolog/log
 # github.com/ryszard/goskiplist v0.0.0-20150312221310-2dfbae5fcf46
 github.com/ryszard/goskiplist/skiplist
 # github.com/spaolacci/murmur3 v1.1.0
+## explicit
 github.com/spaolacci/murmur3
 # github.com/tinylib/msgp v1.1.1
 github.com/tinylib/msgp/msgp
@@ -125,3 +129,5 @@ golang.org/x/time/rate
 # golang.org/x/xerrors v0.0.0-20191204190536-9bdfabe68543
 golang.org/x/xerrors
 golang.org/x/xerrors/internal
+# gopkg.in/yaml.v2 v2.2.7
+## explicit

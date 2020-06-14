@@ -12,6 +12,7 @@ import (
 	"github.com/WinPooh32/peerstohttp/settings"
 )
 
+// TODO add torrent management(disk cache size control, start/stop and etc.).
 type App struct {
 	client *torrent.Client
 
@@ -37,9 +38,11 @@ func New(service *settings.Settings) (*App, error) {
 		}
 
 		cfg.DataDir = tmp
+	} else {
+		cfg.DataDir = *service.DownloadDir
 	}
 
-	// Bind any free port
+	// Bind any free port.
 	cfg.ListenPort = 0
 
 	client, err := torrent.NewClient(cfg)
@@ -60,21 +63,16 @@ func (app *App) Client() *torrent.Client {
 
 func (app *App) Track(torrent *torrent.Torrent) {
 	app.mu.Lock()
-
 	app.torrents[torrent.InfoHash().String()] = torrent
-
 	app.mu.Unlock()
 }
 
 func (app *App) Torrent(hash string) (*torrent.Torrent, bool) {
-	var torrent *torrent.Torrent
-	var ok bool
-
 	app.mu.RLock()
-	torrent, ok = app.torrents[hash]
+	t, ok := app.torrents[hash]
 	app.mu.Unlock()
 
-	return torrent, ok
+	return t, ok
 }
 
 func (app *App) Cleanup() error {
