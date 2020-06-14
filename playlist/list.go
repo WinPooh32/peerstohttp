@@ -43,7 +43,7 @@ type Music struct {
 	CoverIMG   string    `json:"cover_img"`
 	TrackNum   int       `json:"track_num"`
 	Genre      string    `json:"genre"`
-	Artist     []string  `json:"artist"`
+	Artists    []string  `json:"artist"`
 	Album      string    `json:"album"`
 	ReleasedAt time.Time `json:"released_at"`
 }
@@ -132,6 +132,7 @@ func makeItem(file *torrent.File, path []string, base, ext string) Item {
 		// TODO
 		var music Music
 		music.Duration = -1
+		music.Artists = make([]string, 0, 0)
 
 		item.Music = &music
 
