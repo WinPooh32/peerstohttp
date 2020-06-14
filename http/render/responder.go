@@ -40,8 +40,14 @@ func M3U(w http.ResponseWriter, r *http.Request, list *playlist.PlayList) {
 		var name = list.Header.Name
 		var hash = list.Header.Hash
 		var path = strings.Join(itm.Path, "/")
-		var contentURL = url.PathEscape(hash) + "/" + url.PathEscape(name) + "/" + url.PathEscape(path)
 		var duration int64
+
+		var contentURL = hash
+		if len(path) == 1 {
+			contentURL += "/" + url.PathEscape(name)
+		} else {
+			contentURL += "/" + url.PathEscape(name) + "/" + url.PathEscape(path)
+		}
 
 		var displayName string
 		if len(itm.Path) > 1 {
@@ -86,7 +92,7 @@ func HTML(w http.ResponseWriter, r *http.Request, list *playlist.PlayList) {
 		w.WriteHeader(status)
 	}
 
-	buf.WriteString(` <!DOCTYPE html>
+	_, err = buf.WriteString(` <!DOCTYPE html>
 <html>
 <head>
 <title>` + html.EscapeString(list.Header.Name) + `</title>
@@ -95,12 +101,22 @@ func HTML(w http.ResponseWriter, r *http.Request, list *playlist.PlayList) {
 
 <body>
 `)
+	if err != nil {
+		log.Error().Err(err).Msg("responder html header")
+		return
+	}
 
 	for _, itm := range items {
 		var name = list.Header.Name
 		var hash = list.Header.Hash
 		var path = strings.Join(itm.Path, "/")
-		var contentURL = url.PathEscape(hash) + "/" + url.PathEscape(name) + "/" + url.PathEscape(path)
+
+		var contentURL = hash
+		if len(itm.Path) == 1 {
+			contentURL += "/" + url.PathEscape(name)
+		} else {
+			contentURL += "/" + url.PathEscape(name) + "/" + url.PathEscape(path)
+		}
 
 		_, err = buf.WriteString(
 			`<a href="/content/` + contentURL + `">` + path + `</a></br>`,
@@ -113,6 +129,10 @@ func HTML(w http.ResponseWriter, r *http.Request, list *playlist.PlayList) {
 
 	buf.WriteString(`</body>
 </html>`)
+	if err != nil {
+		log.Error().Err(err).Msg("responder html")
+		return
+	}
 
 	err = buf.Flush()
 	if err != nil {
