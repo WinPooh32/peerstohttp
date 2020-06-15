@@ -8,6 +8,7 @@ import (
 
 	anacrolixlog "github.com/anacrolix/log"
 	"github.com/anacrolix/torrent"
+	"github.com/anacrolix/torrent/mse"
 	"golang.org/x/time/rate"
 
 	"github.com/WinPooh32/peerstohttp/settings"
@@ -60,6 +61,16 @@ func New(service *settings.Settings) (*App, error) {
 
 	cfg.NoDHT = *service.NoDHT
 	cfg.Seed = true
+
+	// Header obfuscation.
+	cfg.HeaderObfuscationPolicy = torrent.HeaderObfuscationPolicy{
+		Preferred:        true,
+		RequirePreferred: *service.ForceEncryption,
+	}
+	// Force encryption.
+	if *service.ForceEncryption {
+		cfg.CryptoProvides = mse.CryptoMethodRC4
+	}
 
 	// Torrent debug.
 	cfg.Debug = false
