@@ -60,6 +60,7 @@ func New(service *settings.Settings) (*App, error) {
 	cfg.TorrentPeersLowWater = *service.MaxConnections
 
 	cfg.NoDHT = *service.NoDHT
+	cfg.DisableUTP = *service.NoUTP
 	cfg.Seed = true
 
 	// Header obfuscation.

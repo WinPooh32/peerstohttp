@@ -11,6 +11,7 @@ type Settings struct {
 	UploadRate      *int
 	MaxConnections  *int
 	NoDHT           *bool
+	NoUTP           *bool
 	ForceEncryption *bool
 	JsonLogs        *bool
 	TorrentDebug    *bool
@@ -31,6 +32,7 @@ func (s *Settings) parse() {
 		UploadRate:      flag.Int("up-rate", 0, "upload speed rate in kib/s"),
 		MaxConnections:  flag.Int("max-connections", 50, "max connections per torrent"),
 		NoDHT:           flag.Bool("no-dht", false, "disable dht"),
+		NoUTP:           flag.Bool("no-utp", false, "disable utp"),
 		ForceEncryption: flag.Bool("force-encryption", false, "force encryption"),
 
 		// Debug
