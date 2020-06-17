@@ -53,7 +53,7 @@ func New(service *settings.Settings) (*App, error) {
 	}
 
 	if *service.UploadRate != 0 {
-		cfg.UploadRateLimiter = limit(*service.DownloadRate * kib)
+		cfg.UploadRateLimiter = limit(*service.UploadRate * kib)
 	}
 
 	cfg.EstablishedConnsPerTorrent = *service.MaxConnections
