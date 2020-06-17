@@ -14,25 +14,30 @@ type Settings struct {
 	ForceEncryption *bool
 	JsonLogs        *bool
 	TorrentDebug    *bool
+	Profile         *bool
 }
 
 func (s *Settings) parse() {
 	// HTTP
-	s.Host = flag.String("host", "0.0.0.0", "listening server ip")
-	s.Port = flag.Int("port", 80, "listening port")
 
-	// Torrent
-	s.TorrPort = flag.Int("port-torr", 0, "listening port for torrent")
-	s.DownloadDir = flag.String("dir", "", "where files will be downloaded to")
-	s.DownloadRate = flag.Int("down-rate", 0, "download speed rate in kib/s")
-	s.UploadRate = flag.Int("up-rate", 0, "upload speed rate in kib/s")
-	s.MaxConnections = flag.Int("max-connections", 50, "max connections per torrent")
-	s.NoDHT = flag.Bool("no-dht", false, "disable dht")
-	s.ForceEncryption = flag.Bool("force-encryption", false, "force encryption")
+	*s = Settings{
+		Host: flag.String("host", "0.0.0.0", "listening server ip"),
+		Port: flag.Int("port", 80, "listening port"),
 
-	// Debug
-	s.JsonLogs = flag.Bool("json-logs", false, "json logs output")
-	s.TorrentDebug = flag.Bool("torr-debug", false, "enable torrent backend verbosity")
+		// Torrent
+		TorrPort:        flag.Int("port-torr", 0, "listening port for torrent"),
+		DownloadDir:     flag.String("dir", "", "where files will be downloaded to"),
+		DownloadRate:    flag.Int("down-rate", 0, "download speed rate in kib/s"),
+		UploadRate:      flag.Int("up-rate", 0, "upload speed rate in kib/s"),
+		MaxConnections:  flag.Int("max-connections", 50, "max connections per torrent"),
+		NoDHT:           flag.Bool("no-dht", false, "disable dht"),
+		ForceEncryption: flag.Bool("force-encryption", false, "force encryption"),
+
+		// Debug
+		JsonLogs:     flag.Bool("json-logs", false, "json logs output"),
+		TorrentDebug: flag.Bool("torr-debug", false, "enable torrent backend verbosity"),
+		Profile:      flag.Bool("profile", false, "enable service profiling"),
+	}
 
 	flag.Parse()
 }

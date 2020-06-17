@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"sync"
 
@@ -28,6 +29,22 @@ func newCors(origins []string) *cors.Cors {
 		AllowCredentials: true,
 		MaxAge:           300, // Maximum value not ignored by any of major browsers
 	})
+}
+
+func registerProfiler(r chi.Router) {
+	r.HandleFunc("/debug/pprof/", pprof.Index)
+	r.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
+	r.HandleFunc("/debug/pprof/profile", pprof.Profile)
+	r.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
+	r.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+	// Manually add support for paths linked to by index page at /debug/pprof/
+	r.Handle("/debug/pprof/goroutine", pprof.Handler("goroutine"))
+	r.Handle("/debug/pprof/heap", pprof.Handler("heap"))
+	r.Handle("/debug/pprof/threadcreate", pprof.Handler("threadcreate"))
+	r.Handle("/debug/pprof/block", pprof.Handler("block"))
+	r.Handle("/debug/pprof/allocs", pprof.Handler("allocs"))
+	r.Handle("/debug/pprof/mutex", pprof.Handler("mutex"))
 }
 
 func init() {
@@ -67,6 +84,11 @@ func main() {
 	router.Use(newCors([]string{"*"}).Handler)
 
 	peershttp.RouteApp(router, app)
+
+	// Enable service profiling
+	if *settings.Service.Profile {
+		registerProfiler(router)
+	}
 
 	// Init HTTP server
 	server.Addr = fmt.Sprintf("%s:%d", *settings.Service.Host, *settings.Service.Port)
