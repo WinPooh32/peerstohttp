@@ -59,6 +59,7 @@ func serveTorrentContent(w http.ResponseWriter, r *http.Request, file *torrent.F
 	var err error
 	var name string
 	var reader = file.NewReader()
+	defer reader.Close()
 
 	fip := file.FileInfo().Path
 	if len(fip) == 0 {
