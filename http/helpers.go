@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"time"
@@ -11,6 +12,8 @@ import (
 
 	"github.com/WinPooh32/peerstohttp/app"
 )
+
+var errFileNotFound = errors.New("file not found")
 
 func addNewTorrentHash(ctx context.Context, app *app.App, hash string) (*torrent.Torrent, bool) {
 	var t, new = app.Client().AddTorrentInfoHash(metainfo.NewHashFromHex(hash))
@@ -55,9 +58,67 @@ func addNewTorrentMagnet(ctx context.Context, app *app.App, magnetURI string) (*
 	return t, true
 }
 
-func serveTorrentContent(w http.ResponseWriter, r *http.Request, file *torrent.File) error {
+func serveTorrentDir(w http.ResponseWriter, r *http.Request, t *torrent.Torrent, path string) error {
 	var err error
+	//var name string
+	//
+	//if path == "" {
+	//	name = t.Name()
+	//} else {
+	//	name = filepath.Base(path)
+	//}
+	//
+	//w.Header().Set("Content-Disposition", `filename="`+url.PathEscape(name+".zip")+`"`)
+	//w.Header().Set("Content-Type", "application/zip")
+	//w.WriteHeader(http.StatusOK)
+	//
+	//var reader = t.NewReader()
+	//defer reader.Close()
+	//
+	//// TODO адаптер из файлов торрента
+	//
+	//var zipWriter io.WriteCloser
+	//zipWriter = zip.NewWriter(w)
+	//
+	//for _, f := range t.Files() {
+	//
+	//	header, err := zip.FileInfoHeader(f)
+	//	if err != nil {
+	//		return err
+	//	}
+	//
+	//
+	//}
+	//
+	//_, err = io.Copy(zipWriter, reader)
+	return err
+}
+
+func serveTorrentFile(w http.ResponseWriter, r *http.Request, t *torrent.Torrent, path string) error {
 	var name string
+
+	var file *torrent.File
+	var ok bool
+
+	// Search for file.
+	for _, f := range t.Files() {
+		var p = f.Path()
+		if p == path {
+			file = f
+			ok = true
+			break
+		}
+	}
+
+	if !ok && path == t.Info().Name {
+		file = t.Files()[0]
+		ok = true
+	}
+
+	if !ok || file == nil {
+		return errFileNotFound
+	}
+
 	var reader = file.NewReader()
 	defer reader.Close()
 
@@ -70,17 +131,18 @@ func serveTorrentContent(w http.ResponseWriter, r *http.Request, file *torrent.F
 		name = fip[len(fip)-1]
 	}
 
-	// Only the first 512 bytes are used to sniff the content type.
-	var buffer = make([]byte, 512)
+	return serveContent(w, r, file.Length(), reader, name)
+}
+
+func serveContent(w http.ResponseWriter, r *http.Request, size int64, reader torrent.Reader, name string) error {
+	var err error
 
 	// Don't wait for pieces to complete and be verified.
-	reader.SetResponsive()
-	// Read ahead 10% of file.
-	reader.SetReadahead((file.Length() * 10) / 100)
+	//reader.SetResponsive()
 
-	_, err = reader.Read(buffer)
-	if err != nil {
-		return err
+	if size > 0 {
+		// Read ahead 10% of file.
+		reader.SetReadahead((size * 10) / 100)
 	}
 
 	w.Header().Set("Content-Disposition", `filename="`+url.PathEscape(name)+`"`)

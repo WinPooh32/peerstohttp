@@ -11,8 +11,9 @@ import (
 )
 
 type Header struct {
-	Hash string `json:"hash"`
-	Name string `json:"name"`
+	Hash  string `json:"hash"`
+	Name  string `json:"name"`
+	Files int    `json:"files"`
 }
 
 type Video struct {
@@ -110,6 +111,7 @@ func (p *PlayList) Render(w http.ResponseWriter, r *http.Request) error {
 
 	p.Header.Name = name
 	p.Header.Hash = p.Torr.InfoHash().String()
+	p.Header.Files = len(p.Torr.Files())
 	p.Content = content
 
 	return nil

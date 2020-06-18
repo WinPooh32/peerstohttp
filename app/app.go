@@ -111,7 +111,7 @@ func (app *App) Torrent(hash string) (*torrent.Torrent, bool) {
 	return t, ok
 }
 
-func (app *App) Cleanup() error {
+func (app *App) Close() error {
 	var err error
 
 	// Remove temporary data folder if required.

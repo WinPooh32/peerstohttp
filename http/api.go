@@ -3,8 +3,8 @@ package http
 import (
 	"fmt"
 	"net/http"
+	"strings"
 
-	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
 	"github.com/go-chi/chi"
 	"github.com/go-chi/render"
@@ -78,6 +78,8 @@ func (h *handle) magnet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handle) content(w http.ResponseWriter, r *http.Request) {
+	var err error
+
 	var hash = r.Context().Value(paramHash).(string)
 	var path = r.Context().Value(paramPath).(string)
 
@@ -91,8 +93,6 @@ func (h *handle) content(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	//TODO stream folder as zip file.
-
 	select {
 	case <-r.Context().Done():
 		http.Error(w, http.StatusText(http.StatusRequestTimeout), http.StatusRequestTimeout)
@@ -101,31 +101,19 @@ func (h *handle) content(w http.ResponseWriter, r *http.Request) {
 	case <-t.GotInfo():
 	}
 
-	var file *torrent.File
-	ok = false
-
-	if t.Info().IsDir() {
-		for _, f := range t.Files() {
-			var p = f.Path()
-			if p == path {
-				file = f
-				ok = true
-				break
-			}
-		}
-	} else if ok = (path == t.Info().Name); ok {
-		file = t.Files()[0]
+	if t.Info().IsDir() && strings.Count(path, "/") == 0 {
+		err = serveTorrentDir(w, r, t, path)
+	} else {
+		err = serveTorrentFile(w, r, t, path)
 	}
 
-	if !ok || file == nil {
-		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
-		return
-	}
-
-	var err = serveTorrentContent(w, r, file)
 	if err != nil {
-		log.Warn().Err(err).Msg("write content")
+		log.Warn().Err(err).Msg("serve content")
 		w.WriteHeader(http.StatusInternalServerError)
 		return
 	}
 }
+
+//func fileInfoHeader(fi *torrent.File) (*zip.FileHeader, error) {
+
+//}

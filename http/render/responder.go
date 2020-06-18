@@ -43,7 +43,7 @@ func M3U(w http.ResponseWriter, r *http.Request, list *playlist.PlayList) {
 		var duration int64
 
 		var contentURL = hash
-		if len(path) == 1 {
+		if list.Header.Files <= 1 {
 			contentURL += "/" + url.PathEscape(name)
 		} else {
 			contentURL += "/" + url.PathEscape(name) + "/" + url.PathEscape(path)
@@ -112,7 +112,7 @@ func HTML(w http.ResponseWriter, r *http.Request, list *playlist.PlayList) {
 		var path = strings.Join(itm.Path, "/")
 
 		var contentURL = hash
-		if len(itm.Path) == 1 {
+		if list.Header.Files <= 1 {
 			contentURL += "/" + url.PathEscape(name)
 		} else {
 			contentURL += "/" + url.PathEscape(name) + "/" + url.PathEscape(path)

@@ -70,7 +70,7 @@ func main() {
 		log.Fatal().Err(err).Msg("new app")
 	}
 	defer func() {
-		err = app.Cleanup()
+		err = app.Close()
 		if err != nil {
 			log.Fatal().Err(err).Msg("app clean up")
 		}
