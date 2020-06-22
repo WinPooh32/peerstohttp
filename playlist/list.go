@@ -75,8 +75,9 @@ type PlayList struct {
 	Header  Header `json:"header"`
 	Content []Item `json:"content"`
 
-	Torr      *torrent.Torrent    `json:"-"`
-	Whitelist map[string]struct{} `json:"-"`
+	Torr       *torrent.Torrent    `json:"-"`
+	Whitelist  map[string]struct{} `json:"-"`
+	IgnoreTags map[string]struct{} `json:"-"`
 }
 
 func (p *PlayList) Render(w http.ResponseWriter, r *http.Request) error {
@@ -88,6 +89,11 @@ func (p *PlayList) Render(w http.ResponseWriter, r *http.Request) error {
 	for _, f := range files {
 		var path = f.FileInfo().Path
 		var base string
+
+		var tags = ExtractPathTags(path)
+		if Overlap(tags, p.IgnoreTags) {
+			continue
+		}
 
 		if size := len(path); size > 1 {
 			base = path[len(path)-1]
@@ -106,7 +112,7 @@ func (p *PlayList) Render(w http.ResponseWriter, r *http.Request) error {
 			}
 		}
 
-		content = append(content, makeItem(f, path, base, ext))
+		content = append(content, makeItem(f, path, tags, base, ext))
 	}
 
 	p.Header.Name = name
@@ -117,7 +123,7 @@ func (p *PlayList) Render(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func makeItem(file *torrent.File, path []string, base, ext string) Item {
+func makeItem(file *torrent.File, path, tags []string, base, ext string) Item {
 	var name = strings.TrimSuffix(base, ext)
 
 	var item = Item{
@@ -126,7 +132,7 @@ func makeItem(file *torrent.File, path []string, base, ext string) Item {
 		MIME: mime.TypeByExtension(ext),
 		Size: file.Length(),
 		Path: path,
-		Tags: ExtractPathTags(path),
+		Tags: tags,
 	}
 
 	switch strings.Split(item.MIME, "/")[0] {

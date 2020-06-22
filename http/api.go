@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	paramMagnet    = "magnet"
-	paramHash      = "hash"
-	paramPath      = "path"
-	paramWhitelist = "whitelist"
+	paramMagnet     = "magnet"
+	paramHash       = "hash"
+	paramPath       = "path"
+	paramWhitelist  = "whitelist"
+	paramIgnoretags = "ignoretags"
 )
 
 var (
@@ -36,9 +37,10 @@ func RouteApp(r chi.Router, app *app.App) {
 		app: app,
 	}
 
-	r.Route("/list/{"+patternList+"}/{"+paramWhitelist+"}", func(r chi.Router) {
+	r.Route("/list/{"+patternList+"}/{"+paramWhitelist+"}/{"+paramIgnoretags+"}/", func(r chi.Router) {
 		r.Use(
 			whitelist,
+			ignoretags,
 			host.Host,
 			list_render.ListContentType,
 			list_render.SetListResponder,
@@ -54,6 +56,7 @@ func RouteApp(r chi.Router, app *app.App) {
 func (h *handle) hash(w http.ResponseWriter, r *http.Request) {
 	var hash = r.Context().Value(paramHash).(string)
 	var whitelist = r.Context().Value(paramWhitelist).(map[string]struct{})
+	var ignoretags = r.Context().Value(paramIgnoretags).(map[string]struct{})
 
 	t, ok := addNewTorrentHash(r.Context(), h.app, hash)
 	if !ok {
@@ -61,12 +64,13 @@ func (h *handle) hash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	render.Render(w, r, &playlist.PlayList{Torr: t, Whitelist: whitelist})
+	render.Render(w, r, &playlist.PlayList{Torr: t, Whitelist: whitelist, IgnoreTags: ignoretags})
 }
 
 func (h *handle) magnet(w http.ResponseWriter, r *http.Request) {
 	var magnet = r.Context().Value(paramMagnet).(string)
 	var whitelist = r.Context().Value(paramWhitelist).(map[string]struct{})
+	var ignoretags = r.Context().Value(paramIgnoretags).(map[string]struct{})
 
 	var t, ok = addNewTorrentMagnet(r.Context(), h.app, magnet)
 	if !ok {
@@ -74,7 +78,7 @@ func (h *handle) magnet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	render.Render(w, r, &playlist.PlayList{Torr: t, Whitelist: whitelist})
+	render.Render(w, r, &playlist.PlayList{Torr: t, Whitelist: whitelist, IgnoreTags: ignoretags})
 }
 
 func (h *handle) content(w http.ResponseWriter, r *http.Request) {

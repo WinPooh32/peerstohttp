@@ -23,6 +23,17 @@ var tags = map[string]tagScope{
 	"mix":          tagAnywhere,
 	"remix":        tagAnywhere,
 	"remixes":      tagAnywhere,
+	"japanese":     tagInside,
+	"japan":        tagInside,
+	"cd":           tagInside,
+	"interlude":    tagInside,
+	"vinyl":        tagInside,
+	"lp":           tagInside,
+	"limited":      tagInside,
+	"ep":           tagInside,
+	"extended":     tagInside,
+	"clean":        tagInside,
+	"single":       tagInside,
 	"demo":         tagInside,
 	"capella":      tagInside,
 	"acapella":     tagInside,
@@ -42,6 +53,20 @@ func ExtractPathTags(path []string) []string {
 		extractTags(replaceDelims(s), &b)
 	}
 	return b
+}
+
+func Overlap(tags []string, ignoretags map[string]struct{}) bool {
+	if len(tags) == 0 || len(ignoretags) == 0 {
+		return false
+	}
+
+	for _, tag := range tags {
+		if _, ok := ignoretags[tag]; ok {
+			return true
+		}
+	}
+
+	return false
 }
 
 func extractTags(line string, buf *[]string) {

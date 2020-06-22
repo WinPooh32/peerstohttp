@@ -78,15 +78,33 @@ func path(next http.Handler) http.Handler {
 func whitelist(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var whitelist = map[string]struct{}{}
+		var p = chi.URLParam(r, paramWhitelist)
 
-		if chi.URLParam(r, paramWhitelist) != "any" {
-			var args = strings.Split(strings.ToLower(chi.URLParam(r, paramWhitelist)), ",")
+		if p != "-" {
+			var args = strings.Split(strings.ToLower(p), ",")
 			for _, v := range args {
 				whitelist["."+v] = struct{}{}
 			}
 		}
 
 		ctx := context.WithValue(r.Context(), paramWhitelist, whitelist)
+		next.ServeHTTP(w, r.WithContext(ctx))
+	})
+}
+
+func ignoretags(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var ignoretags = map[string]struct{}{}
+		var p = chi.URLParam(r, paramIgnoretags)
+
+		if p != "-" {
+			var args = strings.Split(strings.ToLower(p), ",")
+			for _, v := range args {
+				ignoretags[v] = struct{}{}
+			}
+		}
+
+		ctx := context.WithValue(r.Context(), paramIgnoretags, ignoretags)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
