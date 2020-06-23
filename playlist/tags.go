@@ -23,6 +23,8 @@ var tags = map[string]tagScope{
 	"mix":          tagAnywhere,
 	"remix":        tagAnywhere,
 	"remixes":      tagAnywhere,
+	"remastered":   tagInside,
+	"remaster":     tagInside,
 	"japanese":     tagInside,
 	"japan":        tagInside,
 	"cd":           tagInside,
