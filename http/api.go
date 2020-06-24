@@ -58,8 +58,9 @@ func (h *handle) hash(w http.ResponseWriter, r *http.Request) {
 	var whitelist = r.Context().Value(paramWhitelist).(map[string]struct{})
 	var ignoretags = r.Context().Value(paramIgnoretags).(map[string]struct{})
 
-	t, ok := addNewTorrentHash(r.Context(), h.app, hash)
-	if !ok {
+	var t, err = h.app.TrackHashContext(r.Context(), metainfo.NewHashFromHex(hash))
+	if err != nil {
+		log.Error().Err(err).Msg("track by hash")
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}
@@ -68,12 +69,13 @@ func (h *handle) hash(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *handle) magnet(w http.ResponseWriter, r *http.Request) {
-	var magnet = r.Context().Value(paramMagnet).(string)
+	var magnet = r.Context().Value(paramMagnet).(*metainfo.Magnet)
 	var whitelist = r.Context().Value(paramWhitelist).(map[string]struct{})
 	var ignoretags = r.Context().Value(paramIgnoretags).(map[string]struct{})
 
-	var t, ok = addNewTorrentMagnet(r.Context(), h.app, magnet)
-	if !ok {
+	var t, err = h.app.TrackMagnetContext(r.Context(), magnet)
+	if err != nil {
+		log.Error().Err(err).Msg("track by hash")
 		http.Error(w, http.StatusText(http.StatusNotFound), http.StatusNotFound)
 		return
 	}

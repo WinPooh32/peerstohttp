@@ -2,6 +2,7 @@ package app
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -20,6 +21,12 @@ const (
 	dbName       = ".app.bolt.db"
 	dbBucketInfo = "torrent_info"
 )
+
+var trackers = [][]string{
+	{"udp://opentor.org:2710", "https://bt.t-ru.org/ann?magnet", "http://bt.t-ru.org/ann?magnet"},
+	{"udp://tracker.coppersurfer.tk:6969/announce"},
+	{"http://retracker.local/announce"},
+}
 
 // TODO add torrent management(disk cache size control, start/stop and etc.).
 type App struct {
@@ -118,37 +125,50 @@ func (app *App) Client() *torrent.Client {
 }
 
 func (app *App) Track(t *torrent.Torrent) error {
-	app.mu.Lock()
-	defer app.mu.Unlock()
+	return app.track(t)
+}
 
+func (app *App) TrackHash(hash metainfo.Hash) (*torrent.Torrent, error) {
+	return app.TrackHashContext(context.Background(), hash)
+}
+
+func (app *App) TrackMagnet(magnet *metainfo.Magnet) (*torrent.Torrent, error) {
+	return app.TrackMagnetContext(context.Background(), magnet)
+}
+
+func (app *App) TrackHashContext(ctx context.Context, hash metainfo.Hash) (*torrent.Torrent, error) {
+	var t, _ = app.client.AddTorrentInfoHash(hash)
+
+	if t == nil {
+		return nil, fmt.Errorf("torrent is nil")
+	}
+
+	return t, app.trackContext(ctx, t)
+}
+
+func (app *App) TrackMagnetContext(ctx context.Context, magnet *metainfo.Magnet) (*torrent.Torrent, error) {
 	var err error
+	var t *torrent.Torrent
 
-	app.torrents[t.InfoHash().String()] = t
-
-	var mi = t.Metainfo()
-	var buf = bytes.NewBuffer(nil)
-
-	err = mi.Write(buf)
-	if err != nil {
-		return fmt.Errorf("write metaInfo: %w", err)
+	var spec = &torrent.TorrentSpec{
+		Trackers:    [][]string{magnet.Trackers},
+		DisplayName: magnet.DisplayName,
+		InfoHash:    magnet.InfoHash,
 	}
 
-	err = app.db.Update(func(tx *bolt.Tx) error {
-		var b = tx.Bucket([]byte(dbBucketInfo))
-		return b.Put(t.InfoHash().Bytes(), buf.Bytes())
-	})
+	t, _, err = app.client.AddTorrentSpec(spec)
 	if err != nil {
-		return fmt.Errorf("put to db: %w", err)
+		return nil, fmt.Errorf("torrent add magnet: %w", err)
 	}
 
-	return nil
+	return t, app.trackContext(ctx, t)
 }
 
 func (app *App) Torrent(hash string) (*torrent.Torrent, bool) {
 	app.mu.RLock()
-	t, ok := app.torrents[hash]
-	app.mu.Unlock()
+	defer app.mu.RUnlock()
 
+	t, ok := app.torrents[hash]
 	return t, ok
 }
 
@@ -169,6 +189,51 @@ func (app *App) Close() error {
 		if err != nil {
 			return fmt.Errorf("close db: %w", err)
 		}
+	}
+
+	return nil
+}
+
+func (app *App) track(t *torrent.Torrent) error {
+	app.mu.Lock()
+	defer app.mu.Unlock()
+
+	var err error
+	var mi = t.Metainfo()
+	var buf = bytes.NewBuffer(nil)
+
+	err = mi.Write(buf)
+	if err != nil {
+		return fmt.Errorf("write metaInfo: %w", err)
+	}
+
+	err = app.db.Update(func(tx *bolt.Tx) error {
+		var b = tx.Bucket([]byte(dbBucketInfo))
+		return b.Put(t.InfoHash().Bytes(), buf.Bytes())
+	})
+	if err != nil {
+		return fmt.Errorf("put to db: %w", err)
+	}
+
+	t.AddTrackers(trackers)
+
+	app.torrents[t.InfoHash().String()] = t
+
+	return nil
+}
+
+func (app *App) trackContext(ctx context.Context, t *torrent.Torrent) error {
+
+	var err = app.track(t)
+	if err != nil {
+		return fmt.Errorf("track torrent: %w", err)
+	}
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+
+	case <-t.GotInfo():
 	}
 
 	return nil

@@ -4,19 +4,11 @@ import (
 	"context"
 	"net/http"
 	"net/url"
-	"regexp"
 	"strings"
 
+	"github.com/anacrolix/torrent/metainfo"
 	"github.com/asaskevich/govalidator"
 	"github.com/go-chi/chi"
-)
-
-const (
-	magnetURI = "^magnet:\\?xt=urn:[a-zA-Z0-9]+:[a-zA-Z0-9]{32,40}((&dn=.+&tr=.+)|(&tr=.+&dn=.+))$"
-)
-
-var (
-	regMagnetURI = regexp.MustCompile(magnetURI)
 )
 
 func hash(next http.Handler) http.Handler {
@@ -44,14 +36,15 @@ func magnet(next http.Handler) http.Handler {
 
 		parts[0] = strings.ToLower(parts[0])
 
-		var magnet = chi.URLParam(r, "*") + "?" + strings.Join(parts, "&")
+		var magnetURI = chi.URLParam(r, "*") + "?" + strings.Join(parts, "&")
+		var magnet, err = metainfo.ParseMagnetURI(magnetURI)
 
-		if !regMagnetURI.Match([]byte(magnet)) {
+		if err != nil {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
 		}
 
-		ctx := context.WithValue(r.Context(), paramMagnet, magnet)
+		ctx := context.WithValue(r.Context(), paramMagnet, &magnet)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
