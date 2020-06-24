@@ -2,6 +2,8 @@ package app
 
 import (
 	"fmt"
+	"net/http"
+	"net/url"
 	"time"
 
 	anacrolixlog "github.com/anacrolix/log"
@@ -55,6 +57,18 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 	// Discovery services.
 	cfg.NoDHT = *service.NoDHT
 	cfg.DisableUTP = *service.NoUTP
+
+	cfg.DisableIPv4 = *service.NoIPv4
+	cfg.DisableIPv6 = *service.NoIPv6
+
+	if *service.ProxyHTTP != "" {
+		var u, err = url.Parse(*service.ProxyHTTP)
+		if err != nil {
+			return nil, fmt.Errorf("parse http proxy url: %w", err)
+		}
+
+		cfg.HTTPProxy = http.ProxyURL(u)
+	}
 
 	// Enable seeding.
 	cfg.Seed = true
