@@ -1,4 +1,4 @@
-package playlist
+package name
 
 import (
 	"strings"
@@ -6,10 +6,12 @@ import (
 	"github.com/asaskevich/govalidator"
 )
 
-func Sanitize(name string) string {
+type Music string
+
+func (m Music) Name() string {
 	var s string
 
-	s = takeLast(name)
+	s = takeLast(string(m))
 	s = trimTrackNum(s)
 	s = strings.TrimSpace(s)
 

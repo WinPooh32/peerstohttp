@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	name_reader "github.com/WinPooh32/peerstohttp/playlist/name"
+
 	"github.com/anacrolix/torrent"
 )
 
@@ -79,13 +81,23 @@ func (p *PlayList) Render(w http.ResponseWriter, r *http.Request) error {
 }
 
 func makeItem(file *torrent.File, path, tags []string, base, ext string) Item {
-	var name = Sanitize(strings.TrimSuffix(base, ext))
+	var mime = mime.TypeByExtension(ext)
+	var name = strings.TrimSuffix(base, ext)
+
+	if mime != "" {
+		switch strings.Split(mime, "/")[0] {
+		case "audio":
+			name = name_reader.Music(name).Name()
+		case "video":
+		case "image":
+		}
+	}
 
 	var item = Item{
 		Name:     name,
 		NameOrig: base,
 		Ext:      ext,
-		MIME:     mime.TypeByExtension(ext),
+		MIME:     mime,
 		Size:     file.Length(),
 		Path:     path,
 		Tags:     tags,
