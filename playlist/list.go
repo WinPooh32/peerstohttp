@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"path/filepath"
 	"strings"
-	"time"
 
 	"github.com/anacrolix/torrent"
 )
@@ -16,47 +15,6 @@ type Header struct {
 	Files int    `json:"files"`
 }
 
-type Video struct {
-	Container string `json:"container"`
-	Codecs    string `json:"codecs"`
-	Bitrate   int    `json:"bitrate"`
-	Duration  int64  `json:"length"`
-
-	Width  int `json:"width"`
-	Height int `json:"height"`
-
-	Lang string `json:"lang"`
-
-	PreviewIMG string    `json:"preview_img"`
-	Season     int       `json:"season"`
-	Episode    int       `json:"episode"`
-	Genres     []string  `json:"genres"`
-	ReleasedAt time.Time `json:"released_at"`
-}
-
-type Music struct {
-	Codec    string `json:"codec"`
-	Bitrate  int    `json:"bitrate"`
-	Duration int64  `json:"length"`
-
-	Lang string `json:"lang"`
-
-	CoverIMG   string    `json:"cover_img"`
-	TrackNum   int       `json:"track_num"`
-	Genre      string    `json:"genre"`
-	Artists    []string  `json:"artist"`
-	Album      string    `json:"album"`
-	ReleasedAt time.Time `json:"released_at"`
-}
-
-type Image struct {
-	Container string `json:"container"`
-	Codec     string `json:"codec"`
-
-	Width  int `json:"width"`
-	Height int `json:"height"`
-}
-
 type Item struct {
 	Name string   `json:"name"`
 	Ext  string   `json:"ext"`
@@ -65,10 +23,6 @@ type Item struct {
 	Path []string `json:"path"`
 
 	Tags []string `json:"tags"`
-
-	Video *Video `json:"video"`
-	Music *Music `json:"audio"`
-	Image *Image `json:"image"`
 }
 
 type PlayList struct {
@@ -133,30 +87,6 @@ func makeItem(file *torrent.File, path, tags []string, base, ext string) Item {
 		Size: file.Length(),
 		Path: path,
 		Tags: tags,
-	}
-
-	switch strings.Split(item.MIME, "/")[0] {
-	case "audio":
-		// TODO
-		var music Music
-		music.Duration = -1
-		music.Artists = make([]string, 0, 0)
-
-		item.Music = &music
-
-	case "video":
-		// TODO
-		var video Video
-		video.Duration = -1
-
-		item.Video = &video
-		item.Video.Genres = make([]string, 0, 0)
-
-	case "image":
-		// TODO
-		var image Image
-
-		item.Image = &image
 	}
 
 	return item

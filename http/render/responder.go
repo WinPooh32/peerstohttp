@@ -40,7 +40,7 @@ func M3U(w http.ResponseWriter, r *http.Request, list *playlist.PlayList) {
 		var name = list.Header.Name
 		var hash = list.Header.Hash
 		var path = strings.Join(itm.Path, "/")
-		var duration int64
+		var duration int64 = -1
 
 		var contentURL = hash
 		if list.Header.Files <= 1 {
@@ -54,14 +54,6 @@ func M3U(w http.ResponseWriter, r *http.Request, list *playlist.PlayList) {
 			displayName = itm.Path[len(itm.Path)-2] + "/" + itm.Name
 		} else {
 			displayName = itm.Name
-		}
-
-		if itm.Music != nil {
-			duration = itm.Music.Duration
-		} else if itm.Video != nil {
-			duration = itm.Video.Duration
-		} else {
-			continue
 		}
 
 		_, err = buf.WriteString(
@@ -127,7 +119,7 @@ func HTML(w http.ResponseWriter, r *http.Request, list *playlist.PlayList) {
 		}
 	}
 
-	buf.WriteString(`</body>
+	_, err = buf.WriteString(`</body>
 </html>`)
 	if err != nil {
 		log.Error().Err(err).Msg("responder html")
