@@ -16,11 +16,12 @@ type Header struct {
 }
 
 type Item struct {
-	Name string   `json:"name"`
-	Ext  string   `json:"ext"`
-	MIME string   `json:"mime"`
-	Size int64    `json:"size"`
-	Path []string `json:"path"`
+	Name     string   `json:"name"`
+	NameOrig string   `json:"name_orig"`
+	Ext      string   `json:"ext"`
+	MIME     string   `json:"mime"`
+	Size     int64    `json:"size"`
+	Path     []string `json:"path"`
 
 	Tags []string `json:"tags"`
 }
@@ -78,15 +79,16 @@ func (p *PlayList) Render(w http.ResponseWriter, r *http.Request) error {
 }
 
 func makeItem(file *torrent.File, path, tags []string, base, ext string) Item {
-	var name = strings.TrimSuffix(base, ext)
+	var name = Sanitize(strings.TrimSuffix(base, ext))
 
 	var item = Item{
-		Name: name,
-		Ext:  ext,
-		MIME: mime.TypeByExtension(ext),
-		Size: file.Length(),
-		Path: path,
-		Tags: tags,
+		Name:     name,
+		NameOrig: base,
+		Ext:      ext,
+		MIME:     mime.TypeByExtension(ext),
+		Size:     file.Length(),
+		Path:     path,
+		Tags:     tags,
 	}
 
 	return item
