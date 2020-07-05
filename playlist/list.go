@@ -89,7 +89,9 @@ func makeItem(file *torrent.File, path, tags []string, base, ext string) Item {
 		case "audio":
 			name = name_reader.Music(name).Name()
 		case "video":
+			// TODO
 		case "image":
+			// TODO
 		}
 	}
 
