@@ -52,19 +52,24 @@ utp dependency requires C compiler, then install it:
 * Windows: download and install https://jmeubank.github.io/tdm-gcc/download/
 * Ubuntu linux: `apt install build-essential`
 
+Download:
+```
+$ go get -v -u github.com/WinPooh32/peerstohttp
+```
+
 Build in vendor mode:
 ```
-go build -mod=vendor -o peerstohttp
+$ go build -mod=vendor -o peerstohttp
 ```
 
 Install:
 ```
-go install -i github.com/WinPooh32/peerstohttp/cmd
+$ go install -i github.com/WinPooh32/peerstohttp/cmd
 ```
 
 Run:
 ```
-go run github.com/WinPooh32/peerstohttp/cmd -port=8080 -dir="/path/to/download"
+$ go run github.com/WinPooh32/peerstohttp/cmd -port=8080 -dir="/path/to/download"
 ```
 
 * Usually, $GOPATH is "~/go";
