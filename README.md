@@ -54,7 +54,7 @@ utp dependency requires C compiler, then install it:
 
 Build in vendor mode:
 ```
-go build -mod=vendor
+go build -mod=vendor -o peerstohttp
 ```
 
 Install:
@@ -64,14 +64,11 @@ go install -i github.com/WinPooh32/peerstohttp/cmd
 
 Run:
 ```
-$GOPATH/bin/peerstohttp
+go run github.com/WinPooh32/peerstohttp/cmd -port=8080 -dir="/path/to/download"
 ```
 
-or:
-```
-go run github.com/WinPooh32/peerstohttp/cmd
-```
-By default, $GOPATH is "~/go"
+* Usually, $GOPATH is "~/go";
+* Default `dir` value is system tmp folder, for listing all possible options run `$ ./peerstohttp -help`.
 
 ## License
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2FWinPooh32%2Fpeerstohttp.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2FWinPooh32%2Fpeerstohttp?ref=badge_large)
