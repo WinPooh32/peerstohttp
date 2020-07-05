@@ -6,54 +6,46 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"math"
 	"math/rand"
 	"net/url"
-	"os"
 	"sync"
 	"text/tabwriter"
 	"time"
 	"unsafe"
 
-	"github.com/anacrolix/dht"
+	"github.com/davecgh/go-spew/spew"
+
+	"github.com/anacrolix/dht/v2"
 	"github.com/anacrolix/log"
 	"github.com/anacrolix/missinggo"
-	"github.com/anacrolix/missinggo/bitmap"
 	"github.com/anacrolix/missinggo/perf"
-	"github.com/anacrolix/missinggo/prioritybitmap"
 	"github.com/anacrolix/missinggo/pubsub"
 	"github.com/anacrolix/missinggo/slices"
+	"github.com/anacrolix/missinggo/v2/bitmap"
+	"github.com/anacrolix/missinggo/v2/prioritybitmap"
+
 	"github.com/anacrolix/torrent/bencode"
 	"github.com/anacrolix/torrent/metainfo"
 	pp "github.com/anacrolix/torrent/peer_protocol"
 	"github.com/anacrolix/torrent/storage"
 	"github.com/anacrolix/torrent/tracker"
-	"github.com/davecgh/go-spew/spew"
 )
 
-func (t *Torrent) chunkIndexSpec(chunkIndex pp.Integer, piece pieceIndex) chunkSpec {
-	return chunkIndexSpec(chunkIndex, t.pieceLength(piece), t.chunkSize)
-}
-
-// Maintains state of torrent within a Client.
+// Maintains state of torrent within a Client. Many methods should not be called before the info is
+// available, see .Info and .GotInfo.
 type Torrent struct {
 	// Torrent-level aggregate statistics. First in struct to ensure 64-bit
 	// alignment. See #262.
 	stats  ConnStats
 	cl     *Client
-	logger *log.Logger
+	logger log.Logger
 
-	networkingEnabled bool
+	networkingEnabled      bool
+	dataDownloadDisallowed bool
+	userOnWriteChunkErr    func(error)
 
-	// Determines what chunks to request from peers. 1: Favour higher priority
-	// pieces with some fuzzing to reduce overlaps and wastage across
-	// connections. 2: The fastest connection downloads strictly in order of
-	// priority, while all others adher to their piece inclications. 3:
-	// Requests are strictly by piece priority, and not duplicated until
-	// duplicateRequestTimeout is reached.
-	requestStrategy int
-	// How long to avoid duplicating a pending request.
-	duplicateRequestTimeout time.Duration
+	// Determines what chunks to request from peers.
+	requestStrategy requestStrategy
 
 	closed   missinggo.Event
 	infoHash metainfo.Hash
@@ -84,12 +76,12 @@ type Torrent struct {
 
 	// Active peer connections, running message stream loops. TODO: Make this
 	// open (not-closed) connections only.
-	conns               map[*connection]struct{}
+	conns               map[*PeerConn]struct{}
 	maxEstablishedConns int
 	// Set of addrs to which we're attempting to connect. Connections are
 	// half-open until all handshakes are completed.
 	halfOpen    map[string]Peer
-	fastestConn *connection
+	fastestConn *PeerConn
 
 	// Reserve of peers to connect to. A peer can be both here and in the
 	// active connections if were told about the peer after connecting with
@@ -104,6 +96,7 @@ type Torrent struct {
 
 	// Name used if the info name isn't available. Should be cleared when the
 	// Info does become available.
+	nameMu      sync.RWMutex
 	displayName string
 
 	// The bencoded bytes of the info dict. This is actively manipulated if
@@ -118,17 +111,18 @@ type Torrent struct {
 	// Set when .Info is obtained.
 	gotMetainfo missinggo.Event
 
-	readers               map[*reader]struct{}
-	readerNowPieces       bitmap.Bitmap
-	readerReadaheadPieces bitmap.Bitmap
+	readers                map[*reader]struct{}
+	_readerNowPieces       bitmap.Bitmap
+	_readerReadaheadPieces bitmap.Bitmap
 
 	// A cache of pieces we need to get. Calculated from various piece and
 	// file priorities and completion states elsewhere.
-	pendingPieces prioritybitmap.PriorityBitmap
+	_pendingPieces prioritybitmap.PriorityBitmap
 	// A cache of completed piece indices.
-	completedPieces bitmap.Bitmap
+	_completedPieces bitmap.Bitmap
 	// Pieces that need to be hashed.
 	piecesQueuedForHash bitmap.Bitmap
+	activePieceHashes   int
 
 	// A pool of piece priorities []int for assignment to new connections.
 	// These "inclinations" are used to give connections preference for
@@ -137,9 +131,37 @@ type Torrent struct {
 
 	// Count of each request across active connections.
 	pendingRequests map[request]int
-	// The last time we requested a chunk. Deleting the request from any
-	// connection will clear this value.
-	lastRequested map[request]*time.Timer
+}
+
+func (t *Torrent) numConns() int {
+	return len(t.conns)
+}
+
+func (t *Torrent) numReaders() int {
+	return len(t.readers)
+}
+
+func (t *Torrent) readerNowPieces() bitmap.Bitmap {
+	return t._readerNowPieces
+}
+
+func (t *Torrent) readerReadaheadPieces() bitmap.Bitmap {
+	return t._readerReadaheadPieces
+}
+
+func (t *Torrent) ignorePieces() bitmap.Bitmap {
+	ret := t._completedPieces.Copy()
+	ret.Union(t.piecesQueuedForHash)
+	for i := 0; i < t.numPieces(); i++ {
+		if t.piece(i).hashing {
+			ret.Set(i, true)
+		}
+	}
+	return ret
+}
+
+func (t *Torrent) pendingPieces() *prioritybitmap.PriorityBitmap {
+	return &t._pendingPieces
 }
 
 func (t *Torrent) tickleReaders() {
@@ -169,8 +191,7 @@ func (t *Torrent) KnownSwarm() (ks []Peer) {
 
 		ks = append(ks, Peer{
 			Id:     conn.PeerID,
-			IP:     conn.remoteAddr.IP,
-			Port:   int(conn.remoteAddr.Port),
+			Addr:   conn.remoteAddr,
 			Source: conn.Discovery,
 			// > If the connection is encrypted, that's certainly enough to set SupportsEncryption.
 			// > But if we're not connected to them with an encrypted connection, I couldn't say
@@ -195,15 +216,8 @@ func (t *Torrent) setChunkSize(size pp.Integer) {
 	}
 }
 
-func (t *Torrent) setDisplayName(dn string) {
-	if t.haveInfo() {
-		return
-	}
-	t.displayName = dn
-}
-
 func (t *Torrent) pieceComplete(piece pieceIndex) bool {
-	return t.completedPieces.Get(bitmap.BitIndex(piece))
+	return t._completedPieces.Get(bitmap.BitIndex(piece))
 }
 
 func (t *Torrent) pieceCompleteUncached(piece pieceIndex) storage.Completion {
@@ -224,8 +238,8 @@ func (t *Torrent) addrActive(addr string) bool {
 	return false
 }
 
-func (t *Torrent) unclosedConnsAsSlice() (ret []*connection) {
-	ret = make([]*connection, 0, len(t.conns))
+func (t *Torrent) unclosedConnsAsSlice() (ret []*PeerConn) {
+	ret = make([]*PeerConn, 0, len(t.conns))
 	for c := range t.conns {
 		if !c.closed.IsSet() {
 			ret = append(ret, c)
@@ -240,9 +254,11 @@ func (t *Torrent) addPeer(p Peer) {
 	if t.closed.IsSet() {
 		return
 	}
-	if cl.badPeerIPPort(p.IP, p.Port) {
-		torrent.Add("peers not added because of bad addr", 1)
-		return
+	if ipAddr, ok := tryIpPortFromNetAddr(p.Addr); ok {
+		if cl.badPeerIPPort(ipAddr.IP, ipAddr.Port) {
+			torrent.Add("peers not added because of bad addr", 1)
+			return
+		}
 	}
 	if t.peers.Add(p) {
 		torrent.Add("peers replaced", 1)
@@ -260,7 +276,9 @@ func (t *Torrent) invalidateMetadata() {
 	for i := range t.metadataCompletedChunks {
 		t.metadataCompletedChunks[i] = false
 	}
+	t.nameMu.Lock()
 	t.info = nil
+	t.nameMu.Unlock()
 }
 
 func (t *Torrent) saveMetadataPiece(index int, data []byte) {
@@ -300,7 +318,7 @@ func infoPieceHashes(info *metainfo.Info) (ret [][]byte) {
 
 func (t *Torrent) makePieces() {
 	hashes := infoPieceHashes(t.info)
-	t.pieces = make([]Piece, len(hashes), len(hashes))
+	t.pieces = make([]Piece, len(hashes))
 	for i, hash := range hashes {
 		piece := &t.pieces[i]
 		piece.t = t
@@ -355,7 +373,9 @@ func (t *Torrent) setInfo(info *metainfo.Info) error {
 			return fmt.Errorf("error opening torrent storage: %s", err)
 		}
 	}
+	t.nameMu.Lock()
 	t.info = info
+	t.nameMu.Unlock()
 	t.displayName = "" // Save a few bytes lol.
 	t.initFiles()
 	t.cacheLength()
@@ -367,7 +387,7 @@ func (t *Torrent) onSetInfo() {
 	for conn := range t.conns {
 		if err := conn.setNumPieces(t.numPieces()); err != nil {
 			t.logger.Printf("closing connection: %s", err)
-			conn.Close()
+			conn.close()
 		}
 	}
 	for i := range t.pieces {
@@ -382,7 +402,7 @@ func (t *Torrent) onSetInfo() {
 	t.gotMetainfo.Set()
 	t.updateWantPeersEvent()
 	t.pendingRequests = make(map[request]int)
-	t.lastRequested = make(map[request]*time.Timer)
+	t.tryCreateMorePieceHashers()
 }
 
 // Called when metadata for a torrent becomes available.
@@ -442,6 +462,8 @@ func (t *Torrent) setMetadataSize(bytes int) (err error) {
 // The current working name for the torrent. Either the name in the info dict,
 // or a display name given such as by the dn value in a magnet link, or "".
 func (t *Torrent) name() string {
+	t.nameMu.RLock()
+	defer t.nameMu.RUnlock()
 	if t.haveInfo() {
 		return t.info.Name
 	}
@@ -465,7 +487,7 @@ func (t *Torrent) metadataPieceSize(piece int) int {
 	return metadataPieceSize(len(t.metadataBytes), piece)
 }
 
-func (t *Torrent) newMetadataExtensionMessage(c *connection, msgType int, piece int, data []byte) pp.Message {
+func (t *Torrent) newMetadataExtensionMessage(c *PeerConn, msgType int, piece int, data []byte) pp.Message {
 	d := map[string]int{
 		"msg_type": msgType,
 		"piece":    piece,
@@ -481,7 +503,7 @@ func (t *Torrent) newMetadataExtensionMessage(c *connection, msgType int, piece 
 	}
 }
 
-func (t *Torrent) pieceStateRuns() (ret []PieceStateRun) {
+func (t *Torrent) pieceStateRuns() (ret PieceStateRuns) {
 	rle := missinggo.NewRunLengthEncoder(func(el interface{}, count uint64) {
 		ret = append(ret, PieceStateRun{
 			PieceState: el.(PieceState),
@@ -496,7 +518,7 @@ func (t *Torrent) pieceStateRuns() (ret []PieceStateRun) {
 }
 
 // Produces a small string representing a PieceStateRun.
-func pieceStateRunStatusChars(psr PieceStateRun) (ret string) {
+func (psr PieceStateRun) String() (ret string) {
 	ret = fmt.Sprintf("%d", psr.Length)
 	ret += func() string {
 		switch psr.Priority {
@@ -554,11 +576,7 @@ func (t *Torrent) writeStatus(w io.Writer) {
 	}())
 	if t.info != nil {
 		fmt.Fprintf(w, "Num Pieces: %d (%d completed)\n", t.numPieces(), t.numPiecesCompleted())
-		fmt.Fprint(w, "Piece States:")
-		for _, psr := range t.pieceStateRuns() {
-			w.Write([]byte(" "))
-			w.Write([]byte(pieceStateRunStatusChars(psr)))
-		}
+		fmt.Fprintf(w, "Piece States: %s", t.pieceStateRuns())
 		fmt.Fprintln(w)
 	}
 	fmt.Fprintf(w, "Reader Pieces:")
@@ -573,7 +591,15 @@ func (t *Torrent) writeStatus(w io.Writer) {
 		tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 		fmt.Fprintf(tw, "    URL\tNext announce\tLast announce\n")
 		for _, ta := range slices.Sort(slices.FromMapElems(t.trackerAnnouncers), func(l, r *trackerScraper) bool {
-			return l.u.String() < r.u.String()
+			lu := l.u
+			ru := r.u
+			var luns, runs url.URL = lu, ru
+			luns.Scheme = ""
+			runs.Scheme = ""
+			var ml missinggo.MultiLess
+			ml.StrictNext(luns.String() == runs.String(), luns.String() < runs.String())
+			ml.StrictNext(lu.String() == ru.String(), lu.String() < ru.String())
+			return ml.Less()
 		}).([]*trackerScraper) {
 			fmt.Fprintf(tw, "    %s\n", ta.statusLine())
 		}
@@ -589,7 +615,7 @@ func (t *Torrent) writeStatus(w io.Writer) {
 	slices.Sort(conns, worseConn)
 	for i, c := range conns {
 		fmt.Fprintf(w, "%2d. ", i+1)
-		c.WriteStatus(w, t)
+		c.writeStatus(w, t)
 	}
 }
 
@@ -626,7 +652,7 @@ func (t *Torrent) bytesMissingLocked() int64 {
 }
 
 func (t *Torrent) bytesLeft() (left int64) {
-	bitmap.Flip(t.completedPieces, 0, bitmap.BitIndex(t.numPieces())).IterTyped(func(piece int) bool {
+	bitmap.Flip(t._completedPieces, 0, bitmap.BitIndex(t.numPieces())).IterTyped(func(piece int) bool {
 		p := &t.pieces[piece]
 		left += int64(p.length() - p.numDirtyBytes())
 		return true
@@ -635,11 +661,11 @@ func (t *Torrent) bytesLeft() (left int64) {
 }
 
 // Bytes left to give in tracker announces.
-func (t *Torrent) bytesLeftAnnounce() uint64 {
+func (t *Torrent) bytesLeftAnnounce() int64 {
 	if t.haveInfo() {
-		return uint64(t.bytesLeft())
+		return t.bytesLeft()
 	} else {
-		return math.MaxUint64
+		return -1
 	}
 }
 
@@ -662,7 +688,7 @@ func (t *Torrent) numPieces() pieceIndex {
 }
 
 func (t *Torrent) numPiecesCompleted() (num int) {
-	return t.completedPieces.Len()
+	return t._completedPieces.Len()
 }
 
 func (t *Torrent) close() (err error) {
@@ -674,7 +700,7 @@ func (t *Torrent) close() (err error) {
 		t.storageLock.Unlock()
 	}
 	for conn := range t.conns {
-		conn.Close()
+		conn.close()
 	}
 	t.cl.event.Broadcast()
 	t.pieceStateChanges.Close()
@@ -698,12 +724,12 @@ func (t *Torrent) writeChunk(piece int, begin int64, data []byte) (err error) {
 	if err == nil && n != len(data) {
 		err = io.ErrShortWrite
 	}
-	return
+	return err
 }
 
 func (t *Torrent) bitfield() (bf []bool) {
 	bf = make([]bool, t.numPieces())
-	t.completedPieces.IterTyped(func(piece int) (again bool) {
+	t._completedPieces.IterTyped(func(piece int) (again bool) {
 		bf[piece] = true
 		return true
 	})
@@ -715,7 +741,7 @@ func (t *Torrent) pieceNumChunks(piece pieceIndex) pp.Integer {
 }
 
 func (t *Torrent) pendAllChunkSpecs(pieceIndex pieceIndex) {
-	t.pieces[pieceIndex].dirtyChunks.Clear()
+	t.pieces[pieceIndex]._dirtyChunks.Clear()
 }
 
 func (t *Torrent) pieceLength(piece pieceIndex) pp.Integer {
@@ -732,32 +758,27 @@ func (t *Torrent) pieceLength(piece pieceIndex) pp.Integer {
 	return pp.Integer(t.info.PieceLength)
 }
 
-func (t *Torrent) hashPiece(piece pieceIndex) (ret metainfo.Hash) {
+func (t *Torrent) hashPiece(piece pieceIndex) (ret metainfo.Hash, copyErr error) {
 	hash := pieceHash.New()
-	p := &t.pieces[piece]
+	p := t.piece(piece)
 	p.waitNoPendingWrites()
 	ip := t.info.Piece(int(piece))
 	pl := ip.Length()
-	n, err := io.Copy(hash, io.NewSectionReader(t.pieces[piece].Storage(), 0, pl))
-	if n == pl {
-		missinggo.CopyExact(&ret, hash.Sum(nil))
-		return
-	}
-	if err != io.ErrUnexpectedEOF && !os.IsNotExist(err) {
-		t.logger.Printf("unexpected error hashing piece with %T: %s", t.storage.TorrentImpl, err)
-	}
+	_, copyErr = io.CopyN( // Return no error iff pl bytes are copied.
+		hash, io.NewSectionReader(t.pieces[piece].Storage(), 0, pl), pl)
+	missinggo.CopyExact(&ret, hash.Sum(nil))
 	return
 }
 
 func (t *Torrent) haveAnyPieces() bool {
-	return t.completedPieces.Len() != 0
+	return t._completedPieces.Len() != 0
 }
 
 func (t *Torrent) haveAllPieces() bool {
 	if !t.haveInfo() {
 		return false
 	}
-	return t.completedPieces.Len() == bitmap.BitIndex(t.numPieces())
+	return t._completedPieces.Len() == bitmap.BitIndex(t.numPieces())
 }
 
 func (t *Torrent) havePiece(index pieceIndex) bool {
@@ -799,7 +820,7 @@ func (t *Torrent) wantPieceIndex(index pieceIndex) bool {
 	if t.pieceComplete(index) {
 		return false
 	}
-	if t.pendingPieces.Contains(bitmap.BitIndex(index)) {
+	if t._pendingPieces.Contains(bitmap.BitIndex(index)) {
 		return true
 	}
 	// t.logger.Printf("piece %d not pending", index)
@@ -812,12 +833,12 @@ func (t *Torrent) wantPieceIndex(index pieceIndex) bool {
 // for the longest. A bad connection is one that usually sends us unwanted
 // pieces, or has been in worser half of the established connections for more
 // than a minute.
-func (t *Torrent) worstBadConn() *connection {
+func (t *Torrent) worstBadConn() *PeerConn {
 	wcs := worseConnSlice{t.unclosedConnsAsSlice()}
 	heap.Init(&wcs)
 	for wcs.Len() != 0 {
-		c := heap.Pop(&wcs).(*connection)
-		if c.stats.ChunksReadWasted.Int64() >= 6 && c.stats.ChunksReadWasted.Int64() > c.stats.ChunksReadUseful.Int64() {
+		c := heap.Pop(&wcs).(*PeerConn)
+		if c._stats.ChunksReadWasted.Int64() >= 6 && c._stats.ChunksReadWasted.Int64() > c._stats.ChunksReadUseful.Int64() {
 			return c
 		}
 		// If the connection is in the worst half of the established
@@ -838,15 +859,17 @@ type PieceStateChange struct {
 }
 
 func (t *Torrent) publishPieceChange(piece pieceIndex) {
-	cur := t.pieceState(piece)
-	p := &t.pieces[piece]
-	if cur != p.publicPieceState {
-		p.publicPieceState = cur
-		t.pieceStateChanges.Publish(PieceStateChange{
-			int(piece),
-			cur,
-		})
-	}
+	t.cl._mu.Defer(func() {
+		cur := t.pieceState(piece)
+		p := &t.pieces[piece]
+		if cur != p.publicPieceState {
+			p.publicPieceState = cur
+			t.pieceStateChanges.Publish(PieceStateChange{
+				int(piece),
+				cur,
+			})
+		}
+	})
 }
 
 func (t *Torrent) pieceNumPendingChunks(piece pieceIndex) pp.Integer {
@@ -857,7 +880,7 @@ func (t *Torrent) pieceNumPendingChunks(piece pieceIndex) pp.Integer {
 }
 
 func (t *Torrent) pieceAllDirty(piece pieceIndex) bool {
-	return t.pieces[piece].dirtyChunks.Len() == int(t.pieceNumChunks(piece))
+	return t.pieces[piece]._dirtyChunks.Len() == int(t.pieceNumChunks(piece))
 }
 
 func (t *Torrent) readersChanged() {
@@ -866,7 +889,7 @@ func (t *Torrent) readersChanged() {
 }
 
 func (t *Torrent) updateReaderPieces() {
-	t.readerNowPieces, t.readerReadaheadPieces = t.readerPiecePriorities()
+	t._readerNowPieces, t._readerReadaheadPieces = t.readerPiecePriorities()
 }
 
 func (t *Torrent) readerPosChanged(from, to pieceRange) {
@@ -916,11 +939,11 @@ func (t *Torrent) updatePiecePriority(piece pieceIndex) {
 	newPrio := p.uncachedPriority()
 	// t.logger.Printf("torrent %p: piece %d: uncached priority: %v", t, piece, newPrio)
 	if newPrio == PiecePriorityNone {
-		if !t.pendingPieces.Remove(bitmap.BitIndex(piece)) {
+		if !t._pendingPieces.Remove(bitmap.BitIndex(piece)) {
 			return
 		}
 	} else {
-		if !t.pendingPieces.Set(bitmap.BitIndex(piece), newPrio.BitmapPriority()) {
+		if !t._pendingPieces.Set(bitmap.BitIndex(piece), newPrio.BitmapPriority()) {
 			return
 		}
 	}
@@ -976,7 +999,7 @@ func (t *Torrent) forReaderOffsetPieces(f func(begin, end pieceIndex) (more bool
 }
 
 func (t *Torrent) piecePriority(piece pieceIndex) piecePriority {
-	prio, ok := t.pendingPieces.GetPriority(bitmap.BitIndex(piece))
+	prio, ok := t._pendingPieces.GetPriority(bitmap.BitIndex(piece))
 	if !ok {
 		return PiecePriorityNone
 	}
@@ -996,7 +1019,7 @@ func (t *Torrent) pendRequest(req request) {
 }
 
 func (t *Torrent) pieceCompletionChanged(piece pieceIndex) {
-	log.Call().Add("piece", piece).AddValue(debugLogValue).Log(t.logger)
+	t.tickleReaders()
 	t.cl.event.Broadcast()
 	if t.pieceComplete(piece) {
 		t.onPieceCompleted(piece)
@@ -1008,7 +1031,7 @@ func (t *Torrent) pieceCompletionChanged(piece pieceIndex) {
 
 func (t *Torrent) numReceivedConns() (ret int) {
 	for c := range t.conns {
-		if c.Discovery == peerSourceIncoming {
+		if c.Discovery == PeerSourceIncoming {
 			ret++
 		}
 	}
@@ -1054,19 +1077,22 @@ func (t *Torrent) putPieceInclination(pi []int) {
 	pieceInclinationsPut.Add(1)
 }
 
-func (t *Torrent) updatePieceCompletion(piece pieceIndex) {
-	pcu := t.pieceCompleteUncached(piece)
-	p := &t.pieces[piece]
-	changed := t.completedPieces.Get(bitmap.BitIndex(piece)) != pcu.Complete || p.storageCompletionOk != pcu.Ok
-	log.Fmsg("piece %d completion: %v", piece, pcu.Ok).AddValue(debugLogValue).Log(t.logger)
-	p.storageCompletionOk = pcu.Ok
-	t.completedPieces.Set(bitmap.BitIndex(piece), pcu.Complete)
-	t.tickleReaders()
-	// t.logger.Printf("piece %d uncached completion: %v", piece, pcu.Complete)
-	// t.logger.Printf("piece %d changed: %v", piece, changed)
+func (t *Torrent) updatePieceCompletion(piece pieceIndex) bool {
+	p := t.piece(piece)
+	uncached := t.pieceCompleteUncached(piece)
+	cached := p.completion()
+	changed := cached != uncached
+	complete := uncached.Complete
+	p.storageCompletionOk = uncached.Ok
+	t._completedPieces.Set(bitmap.BitIndex(piece), complete)
+	if complete && len(p.dirtiers) != 0 {
+		t.logger.Printf("marked piece %v complete but still has dirtiers", piece)
+	}
 	if changed {
+		log.Fstr("piece %d completion changed: %+v -> %+v", piece, cached, uncached).WithValues(debugLogValue).Log(t.logger)
 		t.pieceCompletionChanged(piece)
 	}
+	return changed
 }
 
 // Non-blocking read. Client lock is not required.
@@ -1074,12 +1100,6 @@ func (t *Torrent) readAt(b []byte, off int64) (n int, err error) {
 	p := &t.pieces[off/t.info.PieceLength]
 	p.waitNoPendingWrites()
 	return p.Storage().ReadAt(b, off-p.Info().Offset())
-}
-
-func (t *Torrent) updateAllPieceCompletions() {
-	for i := pieceIndex(0); i < t.numPieces(); i++ {
-		t.updatePieceCompletion(i)
-	}
 }
 
 // Returns an error if the metadata was completed, but couldn't be set for
@@ -1122,7 +1142,7 @@ func (t *Torrent) needData() bool {
 	if !t.haveInfo() {
 		return true
 	}
-	return t.pendingPieces.Len() != 0
+	return t._pendingPieces.Len() != 0
 }
 
 func appendMissingStrings(old, new []string) (ret []string) {
@@ -1172,7 +1192,7 @@ func (t *Torrent) SetInfoBytes(b []byte) (err error) {
 }
 
 // Returns true if connection is removed from torrent.Conns.
-func (t *Torrent) deleteConnection(c *connection) (ret bool) {
+func (t *Torrent) deleteConnection(c *PeerConn) (ret bool) {
 	if !c.closed.IsSet() {
 		panic("connection is not closed")
 		// There are behaviours prevented by the closed state that will fail
@@ -1192,14 +1212,14 @@ func (t *Torrent) assertNoPendingRequests() {
 	if len(t.pendingRequests) != 0 {
 		panic(t.pendingRequests)
 	}
-	if len(t.lastRequested) != 0 {
-		panic(t.lastRequested)
-	}
+	//if len(t.lastRequested) != 0 {
+	//	panic(t.lastRequested)
+	//}
 }
 
-func (t *Torrent) dropConnection(c *connection) {
+func (t *Torrent) dropConnection(c *PeerConn) {
 	t.cl.event.Broadcast()
-	c.Close()
+	c.close()
 	if t.deleteConnection(c) {
 		t.openNewConns()
 	}
@@ -1297,11 +1317,11 @@ func (t *Torrent) startMissingTrackerScrapers() {
 
 // Returns an AnnounceRequest with fields filled out to defaults and current
 // values.
-func (t *Torrent) announceRequest() tracker.AnnounceRequest {
+func (t *Torrent) announceRequest(event tracker.AnnounceEvent) tracker.AnnounceRequest {
 	// Note that IPAddress is not set. It's set for UDP inside the tracker
 	// code, since it's dependent on the network in use.
 	return tracker.AnnounceRequest{
-		Event:    tracker.None,
+		Event:    event,
 		NumWant:  -1,
 		Port:     uint16(t.cl.incomingPeerPort()),
 		PeerId:   t.cl.peerID,
@@ -1329,21 +1349,20 @@ func (t *Torrent) consumeDhtAnnouncePeers(pvs <-chan dht.PeersValues) {
 				continue
 			}
 			t.addPeer(Peer{
-				IP:     cp.IP[:],
-				Port:   cp.Port,
-				Source: peerSourceDHTGetPeers,
+				Addr:   ipPortAddr{cp.IP, cp.Port},
+				Source: PeerSourceDhtGetPeers,
 			})
 		}
 		cl.unlock()
 	}
 }
 
-func (t *Torrent) announceToDht(impliedPort bool, s *dht.Server) error {
+func (t *Torrent) announceToDht(impliedPort bool, s DhtServer) error {
 	ps, err := s.Announce(t.infoHash, t.cl.incomingPeerPort(), impliedPort)
 	if err != nil {
 		return err
 	}
-	go t.consumeDhtAnnouncePeers(ps.Peers)
+	go t.consumeDhtAnnouncePeers(ps.Peers())
 	select {
 	case <-t.closed.LockedChan(t.cl.locker()):
 	case <-time.After(5 * time.Minute):
@@ -1352,7 +1371,7 @@ func (t *Torrent) announceToDht(impliedPort bool, s *dht.Server) error {
 	return nil
 }
 
-func (t *Torrent) dhtAnnouncer(s *dht.Server) {
+func (t *Torrent) dhtAnnouncer(s DhtServer) {
 	cl := t.cl
 	for {
 		select {
@@ -1365,7 +1384,7 @@ func (t *Torrent) dhtAnnouncer(s *dht.Server) {
 		cl.unlock()
 		err := t.announceToDht(true, s)
 		if err != nil {
-			t.logger.Printf("error announcing %q to DHT: %s", t, err)
+			t.logger.WithValues(log.Warning).Printf("error announcing %q to DHT: %s", t, err)
 		}
 	}
 }
@@ -1376,6 +1395,8 @@ func (t *Torrent) addPeers(peers []Peer) {
 	}
 }
 
+// The returned TorrentStats may require alignment in memory. See
+// https://github.com/anacrolix/torrent/issues/383.
 func (t *Torrent) Stats() TorrentStats {
 	t.cl.rLock()
 	defer t.cl.rUnlock()
@@ -1412,30 +1433,30 @@ func (t *Torrent) numTotalPeers() int {
 		peers[addr] = struct{}{}
 	}
 	t.peers.Each(func(peer Peer) {
-		peers[fmt.Sprintf("%s:%d", peer.IP, peer.Port)] = struct{}{}
+		peers[peer.Addr.String()] = struct{}{}
 	})
 	return len(peers)
 }
 
 // Reconcile bytes transferred before connection was associated with a
 // torrent.
-func (t *Torrent) reconcileHandshakeStats(c *connection) {
-	if c.stats != (ConnStats{
+func (t *Torrent) reconcileHandshakeStats(c *PeerConn) {
+	if c._stats != (ConnStats{
 		// Handshakes should only increment these fields:
-		BytesWritten: c.stats.BytesWritten,
-		BytesRead:    c.stats.BytesRead,
+		BytesWritten: c._stats.BytesWritten,
+		BytesRead:    c._stats.BytesRead,
 	}) {
 		panic("bad stats")
 	}
 	c.postHandshakeStats(func(cs *ConnStats) {
-		cs.BytesRead.Add(c.stats.BytesRead.Int64())
-		cs.BytesWritten.Add(c.stats.BytesWritten.Int64())
+		cs.BytesRead.Add(c._stats.BytesRead.Int64())
+		cs.BytesWritten.Add(c._stats.BytesWritten.Int64())
 	})
 	c.reconciledHandshakeStats = true
 }
 
 // Returns true if the connection is added.
-func (t *Torrent) addConnection(c *connection) (err error) {
+func (t *Torrent) addConnection(c *PeerConn) (err error) {
 	defer func() {
 		if err == nil {
 			torrent.Add("added connections", 1)
@@ -1452,7 +1473,7 @@ func (t *Torrent) addConnection(c *connection) (err error) {
 			continue
 		}
 		if left, ok := c.hasPreferredNetworkOver(c0); ok && left {
-			c0.Close()
+			c0.close()
 			t.deleteConnection(c0)
 		} else {
 			return errors.New("existing connection preferred")
@@ -1463,7 +1484,7 @@ func (t *Torrent) addConnection(c *connection) (err error) {
 		if c == nil {
 			return errors.New("don't want conns")
 		}
-		c.Close()
+		c.close()
 		t.deleteConnection(c)
 	}
 	if len(t.conns) >= t.maxEstablishedConns {
@@ -1496,63 +1517,84 @@ func (t *Torrent) SetMaxEstablishedConns(max int) (oldMax int) {
 	t.maxEstablishedConns = max
 	wcs := slices.HeapInterface(slices.FromMapKeys(t.conns), worseConn)
 	for len(t.conns) > t.maxEstablishedConns && wcs.Len() > 0 {
-		t.dropConnection(wcs.Pop().(*connection))
+		t.dropConnection(wcs.Pop().(*PeerConn))
 	}
 	t.openNewConns()
 	return oldMax
 }
 
-func (t *Torrent) pieceHashed(piece pieceIndex, correct bool) {
-	log.Fmsg("hashed piece %d", piece).Add("piece", piece).Add("passed", correct).AddValue(debugLogValue).Log(t.logger)
+func (t *Torrent) pieceHashed(piece pieceIndex, passed bool, hashIoErr error) {
+	t.logger.Log(log.Fstr("hashed piece %d (passed=%t)", piece, passed).WithValues(debugLogValue))
+	p := t.piece(piece)
+	p.numVerifies++
+	t.cl.event.Broadcast()
 	if t.closed.IsSet() {
 		return
 	}
-	p := &t.pieces[piece]
-	touchers := t.reapPieceTouchers(piece)
+
+	// Don't score the first time a piece is hashed, it could be an initial check.
 	if p.storageCompletionOk {
-		// Don't score the first time a piece is hashed, it could be an
-		// initial check.
-		if correct {
+		if passed {
 			pieceHashedCorrect.Add(1)
 		} else {
-			log.Fmsg("piece failed hash: %d connections contributed", len(touchers)).AddValues(t, p).Log(t.logger)
+			log.Fmsg("piece %d failed hash: %d connections contributed", piece, len(p.dirtiers)).AddValues(t, p).Log(t.logger)
 			pieceHashedNotCorrect.Add(1)
 		}
 	}
-	if correct {
-		if len(touchers) != 0 {
-			// Don't increment stats above connection-level for every involved
-			// connection.
+
+	if passed {
+		if len(p.dirtiers) != 0 {
+			// Don't increment stats above connection-level for every involved connection.
 			t.allStats((*ConnStats).incrementPiecesDirtiedGood)
 		}
-		for _, c := range touchers {
-			c.stats.incrementPiecesDirtiedGood()
+		for c := range p.dirtiers {
+			c._stats.incrementPiecesDirtiedGood()
 		}
+		t.clearPieceTouchers(piece)
 		err := p.Storage().MarkComplete()
 		if err != nil {
 			t.logger.Printf("%T: error marking piece complete %d: %s", t.storage, piece, err)
 		}
+		t.pendAllChunkSpecs(piece)
 	} else {
-		if len(touchers) != 0 {
-			// Don't increment stats above connection-level for every involved
-			// connection.
+		if len(p.dirtiers) != 0 && p.allChunksDirty() && hashIoErr == nil {
+			// Peers contributed to all the data for this piece hash failure, and the failure was
+			// not due to errors in the storage (such as data being dropped in a cache).
+
+			// Increment Torrent and above stats, and then specific connections.
 			t.allStats((*ConnStats).incrementPiecesDirtiedBad)
-			for _, c := range touchers {
+			for c := range p.dirtiers {
 				// Y u do dis peer?!
-				c.stats.incrementPiecesDirtiedBad()
+				c.stats().incrementPiecesDirtiedBad()
 			}
-			slices.Sort(touchers, connLessTrusted)
+
+			bannableTouchers := make([]*PeerConn, 0, len(p.dirtiers))
+			for c := range p.dirtiers {
+				if !c.trusted {
+					bannableTouchers = append(bannableTouchers, c)
+				}
+			}
+			t.clearPieceTouchers(piece)
+			slices.Sort(bannableTouchers, connLessTrusted)
+
 			if t.cl.config.Debug {
-				t.logger.Printf("dropping first corresponding conn from trust: %v", func() (ret []int64) {
-					for _, c := range touchers {
-						ret = append(ret, c.netGoodPiecesDirtied())
-					}
-					return
-				}())
+				t.logger.Printf(
+					"bannable conns by trust for piece %d: %v",
+					piece,
+					func() (ret []connectionTrust) {
+						for _, c := range bannableTouchers {
+							ret = append(ret, c.trust())
+						}
+						return
+					}(),
+				)
 			}
-			c := touchers[0]
-			t.cl.banPeerIP(c.remoteAddr.IP)
-			c.Drop()
+
+			if len(bannableTouchers) >= 1 {
+				c := bannableTouchers[0]
+				t.cl.banPeerIP(c.remoteIp())
+				c.drop()
+			}
 		}
 		t.onIncompletePiece(piece)
 		p.Storage().MarkNotComplete()
@@ -1571,7 +1613,7 @@ func (t *Torrent) onPieceCompleted(piece pieceIndex) {
 	t.pendAllChunkSpecs(piece)
 	t.cancelRequestsForPiece(piece)
 	for conn := range t.conns {
-		conn.Have(piece)
+		conn.have(piece)
 	}
 }
 
@@ -1592,116 +1634,140 @@ func (t *Torrent) onIncompletePiece(piece pieceIndex) {
 
 	// for c := range t.conns {
 	// 	if c.sentHave(piece) {
-	// 		c.Drop()
+	// 		c.drop()
 	// 	}
 	// }
 	for conn := range t.conns {
-		if conn.PeerHasPiece(piece) {
+		if conn.peerHasPiece(piece) {
 			conn.updateRequests()
 		}
 	}
 }
 
-func (t *Torrent) verifyPiece(piece pieceIndex) {
-	cl := t.cl
-	cl.lock()
-	defer cl.unlock()
-	p := &t.pieces[piece]
-	defer func() {
-		p.numVerifies++
-		cl.event.Broadcast()
-	}()
-	for p.hashing || t.storage == nil {
-		cl.event.Wait()
+func (t *Torrent) tryCreateMorePieceHashers() {
+	for !t.closed.IsSet() && t.activePieceHashes < 2 && t.tryCreatePieceHasher() {
 	}
-	if !p.t.piecesQueuedForHash.Remove(bitmap.BitIndex(piece)) {
-		panic("piece was not queued")
-	}
-	t.updatePiecePriority(piece)
-	if t.closed.IsSet() || t.pieceComplete(piece) {
-		return
-	}
-	p.hashing = true
-	t.publishPieceChange(piece)
-	t.updatePiecePriority(piece)
-	t.storageLock.RLock()
-	cl.unlock()
-	sum := t.hashPiece(piece)
-	t.storageLock.RUnlock()
-	cl.lock()
-	p.hashing = false
-	t.updatePiecePriority(piece)
-	t.pieceHashed(piece, sum == *p.hash)
-	t.publishPieceChange(piece)
 }
 
-// Return the connections that touched a piece, and clear the entries while
-// doing it.
-func (t *Torrent) reapPieceTouchers(piece pieceIndex) (ret []*connection) {
-	for c := range t.pieces[piece].dirtiers {
-		delete(c.peerTouchedPieces, piece)
-		ret = append(ret, c)
+func (t *Torrent) tryCreatePieceHasher() bool {
+	if t.storage == nil {
+		return false
 	}
-	t.pieces[piece].dirtiers = nil
+	pi, ok := t.getPieceToHash()
+	if !ok {
+		return false
+	}
+	p := t.piece(pi)
+	t.piecesQueuedForHash.Remove(pi)
+	p.hashing = true
+	t.publishPieceChange(pi)
+	t.updatePiecePriority(pi)
+	t.storageLock.RLock()
+	t.activePieceHashes++
+	go t.pieceHasher(pi)
+	return true
+}
+
+func (t *Torrent) getPieceToHash() (ret pieceIndex, ok bool) {
+	t.piecesQueuedForHash.IterTyped(func(i pieceIndex) bool {
+		if t.piece(i).hashing {
+			return true
+		}
+		ret = i
+		ok = true
+		return false
+	})
 	return
 }
 
-func (t *Torrent) connsAsSlice() (ret []*connection) {
+func (t *Torrent) pieceHasher(index pieceIndex) {
+	p := t.piece(index)
+	sum, copyErr := t.hashPiece(index)
+	correct := sum == *p.hash
+	switch copyErr {
+	case nil, io.EOF:
+	default:
+		log.Fmsg("piece %v (%s) hash failure copy error: %v", p, p.hash.HexString(), copyErr).Log(t.logger)
+	}
+	t.storageLock.RUnlock()
+	t.cl.lock()
+	defer t.cl.unlock()
+	p.hashing = false
+	t.updatePiecePriority(index)
+	t.pieceHashed(index, correct, copyErr)
+	t.publishPieceChange(index)
+	t.activePieceHashes--
+	t.tryCreateMorePieceHashers()
+}
+
+// Return the connections that touched a piece, and clear the entries while doing it.
+func (t *Torrent) clearPieceTouchers(pi pieceIndex) {
+	p := t.piece(pi)
+	for c := range p.dirtiers {
+		delete(c.peerTouchedPieces, pi)
+		delete(p.dirtiers, c)
+	}
+}
+
+func (t *Torrent) connsAsSlice() (ret []*PeerConn) {
 	for c := range t.conns {
 		ret = append(ret, c)
 	}
 	return
 }
 
-// Currently doesn't really queue, but should in the future.
 func (t *Torrent) queuePieceCheck(pieceIndex pieceIndex) {
-	piece := &t.pieces[pieceIndex]
+	piece := t.piece(pieceIndex)
 	if piece.queuedForHash() {
 		return
 	}
 	t.piecesQueuedForHash.Add(bitmap.BitIndex(pieceIndex))
 	t.publishPieceChange(pieceIndex)
 	t.updatePiecePriority(pieceIndex)
-	go t.verifyPiece(pieceIndex)
+	t.tryCreateMorePieceHashers()
 }
 
+// Forces all the pieces to be re-hashed. See also Piece.VerifyData. This should not be called
+// before the Info is available.
 func (t *Torrent) VerifyData() {
 	for i := pieceIndex(0); i < t.NumPieces(); i++ {
 		t.Piece(i).VerifyData()
 	}
 }
 
-// Start the process of connecting to the given peer for the given torrent if
-// appropriate.
+// Start the process of connecting to the given peer for the given torrent if appropriate.
 func (t *Torrent) initiateConn(peer Peer) {
 	if peer.Id == t.cl.peerID {
 		return
 	}
-	if t.cl.badPeerIPPort(peer.IP, peer.Port) {
+
+	if t.cl.badPeerAddr(peer.Addr) && !peer.Trusted {
 		return
 	}
-	addr := IpPort{peer.IP, uint16(peer.Port)}
+	addr := peer.Addr
 	if t.addrActive(addr.String()) {
 		return
 	}
 	t.halfOpen[addr.String()] = peer
-	go t.cl.outgoingConnection(t, addr, peer.Source)
+	go t.cl.outgoingConnection(t, addr, peer.Source, peer.Trusted)
 }
 
+// Adds a trusted, pending peer for each of the given Client's addresses. Typically used in tests to
+// quickly make one Client visible to the Torrent of another Client.
 func (t *Torrent) AddClientPeer(cl *Client) {
 	t.AddPeers(func() (ps []Peer) {
 		for _, la := range cl.ListenAddrs() {
 			ps = append(ps, Peer{
-				IP:   missinggo.AddrIP(la),
-				Port: missinggo.AddrPort(la),
+				Addr:    la,
+				Trusted: true,
 			})
 		}
 		return
 	}())
 }
 
-// All stats that include this Torrent. Useful when we want to increment
-// ConnStats but not for every connection.
+// All stats that include this Torrent. Useful when we want to increment ConnStats but not for every
+// connection.
 func (t *Torrent) allStats(f func(*ConnStats)) {
 	f(&t.stats)
 	f(&t.cl.stats)
@@ -1717,4 +1783,71 @@ func (t *Torrent) pieceQueuedForHash(i pieceIndex) bool {
 
 func (t *Torrent) dialTimeout() time.Duration {
 	return reducedDialTimeout(t.cl.config.MinDialTimeout, t.cl.config.NominalDialTimeout, t.cl.config.HalfOpenConnsPerTorrent, t.peers.Len())
+}
+
+func (t *Torrent) piece(i int) *Piece {
+	return &t.pieces[i]
+}
+
+func (t *Torrent) requestStrategyTorrent() requestStrategyTorrent {
+	return t
+}
+
+type torrentRequestStrategyCallbacks struct {
+	t *Torrent
+}
+
+func (cb torrentRequestStrategyCallbacks) requestTimedOut(r request) {
+	torrent.Add("request timeouts", 1)
+	cb.t.cl.lock()
+	defer cb.t.cl.unlock()
+	for cn := range cb.t.conns {
+		if cn.peerHasPiece(pieceIndex(r.Index)) {
+			cn.updateRequests()
+		}
+	}
+
+}
+
+func (t *Torrent) requestStrategyCallbacks() requestStrategyCallbacks {
+	return torrentRequestStrategyCallbacks{t}
+}
+
+func (t *Torrent) onWriteChunkErr(err error) {
+	if t.userOnWriteChunkErr != nil {
+		go t.userOnWriteChunkErr(err)
+		return
+	}
+	t.disallowDataDownloadLocked()
+}
+
+func (t *Torrent) DisallowDataDownload() {
+	t.cl.lock()
+	defer t.cl.unlock()
+	t.disallowDataDownloadLocked()
+}
+
+func (t *Torrent) disallowDataDownloadLocked() {
+	log.Printf("disallowing data download")
+	t.dataDownloadDisallowed = true
+	for c := range t.conns {
+		c.updateRequests()
+	}
+}
+
+func (t *Torrent) AllowDataDownload() {
+	t.cl.lock()
+	defer t.cl.unlock()
+	log.Printf("AllowDataDownload")
+	t.dataDownloadDisallowed = false
+	for c := range t.conns {
+		c.updateRequests()
+	}
+
+}
+
+func (t *Torrent) SetOnWriteChunkError(f func(error)) {
+	t.cl.lock()
+	defer t.cl.unlock()
+	t.userOnWriteChunkErr = f
 }

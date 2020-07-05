@@ -1,54 +1,65 @@
-# Go-PeersToHTTP
+# PeersToHTTP
 [![CircleCI](https://circleci.com/gh/WinPooh32/peerstohttp.svg?style=svg)](https://circleci.com/gh/WinPooh32/peerstohttp) [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2FWinPooh32%2Fpeerstohttp.svg?type=shield)](https://app.fossa.io/projects/git%2Bgithub.com%2FWinPooh32%2Fpeerstohttp?ref=badge_shield)
 [![Go Report Card](https://goreportcard.com/badge/github.com/WinPooh32/peerstohttp)](https://goreportcard.com/report/github.com/WinPooh32/peerstohttp)
 
 Simple torrent proxy to http stream controlled over REST-like api
 
-## Http API
-Get list of files by magnet url:
+## HTTP API
+##### URL Parameters:
+* **playlist** - output file format, one of these values: `m3u`,`html`,`json`
+* **hash** - torrent info hash. Example: `08ada5a7a6183aae1e09d831df6748d566095a10`
+* **extsWhitelist** - list of whitelisted file extensions. Possible values: "-" (any) or list extension names divided by comma. Examples: "`-`", "`mp3,mp4a`"
+* **tagsBlacklist** - list of blacklisted tags, extracted from file names. Possible values: "-" (no filter) or list tags divided by comma. See /playlist/tags.go for full list of possible tags. Examples: "`-`", "`remix,interview`"
+
+Get list of files by magnet uri:
 ```
-http://127.0.0.1:8080/api/{playlist:[m3u,html,json]+}/magnet/{magnet}
+GET http://localhost/list/{playlist}/{extsWhitelist}/{tagsBlacklist}/magnet/{magnetURI}
 ```
 
-Get list of files by infoHash:
+Get list of files by info hash:
 ```
-http://127.0.0.1:8080/api/{playlist:[m3u,html,json]+}/hash/{hash}
+GET http://localhost/list/{playlist}/{extsWhitelist}/{tagsBlacklist}/hash/{hash}
 ```
 
 Download file:
 ```
-http://127.0.0.1:8080/api/infohash/{infohash}/{base64path}
+GET http://localhost/content/{hash}/{filePath}
 ```
 
-## Example
+## Examples
 Get HTML links list for Sintel by torrent hash:
 ```
-http://127.0.0.1:8080/api/html/hash/08ada5a7a6183aae1e09d831df6748d566095a10
+http://localhost/list/html/mp4/-/hash/08ada5a7a6183aae1e09d831df6748d566095a10
 ```
+
 or by magnet URI:
 ```
-http://127.0.0.1:8080/api/html/magnet/magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fsintel.torrent
+http://localhost/list/html/mp4/-/magnet/magnet:?xt=urn:btih:08ada5a7a6183aae1e09d831df6748d566095a10&dn=Sintel&tr=udp%3A%2F%2Fexplodie.org%3A6969&tr=udp%3A%2F%2Ftracker.coppersurfer.tk%3A6969&tr=udp%3A%2F%2Ftracker.empire-js.us%3A1337&tr=udp%3A%2F%2Ftracker.leechers-paradise.org%3A6969&tr=udp%3A%2F%2Ftracker.opentrackr.org%3A1337&tr=wss%3A%2F%2Ftracker.btorrent.xyz&tr=wss%3A%2F%2Ftracker.fastcast.nz&tr=wss%3A%2F%2Ftracker.openwebtorrent.com&ws=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2F&xs=https%3A%2F%2Fwebtorrent.io%2Ftorrents%2Fsintel.torrent
 ```
 
 Then watch Sintel.mp4 using VLC video player:
 ```
-$ vlc http://127.0.0.1:8080/api/infohash/08ada5a7a6183aae1e09d831df6748d566095a10/U2ludGVsLm1wNA==
+$ vlc http://localhost/content/08ada5a7a6183aae1e09d831df6748d566095a10/Sintel/Sintel.mp4
 ```
 
 Or open m3u playlist in VLC video player:
 ```
-$ vlc http://127.0.0.1:8080/api/m3u/hash/08ada5a7a6183aae1e09d831df6748d566095a10
+$ vlc http://localhost/list/m3u/mp4/-/hash/08ada5a7a6183aae1e09d831df6748d566095a10
 ```
 
 ## Build steps
+utp dependency requires C compiler, then install it:  
+* Windows: download and install https://jmeubank.github.io/tdm-gcc/download/
+* Ubuntu linux: `apt install build-essential`
+
 Build in vendor mode:
 ```
 go build -mod=vendor
 ```
 
-Using GOPATH:
+Install:
 ```
-go get -u github.com/WinPooh32/peerstohttp
+go install -i github.com/WinPooh32/peerstohttp/cmd
 ```
 
 Run:
@@ -58,9 +69,9 @@ $GOPATH/bin/peerstohttp
 
 or:
 ```
-go run github.com/WinPooh32/peerstohttp
+go run github.com/WinPooh32/peerstohttp/cmd
 ```
-By default $GOPATH is "~/go"
+By default, $GOPATH is "~/go"
 
 ## License
 [![FOSSA Status](https://app.fossa.io/api/projects/git%2Bgithub.com%2FWinPooh32%2Fpeerstohttp.svg?type=large)](https://app.fossa.io/projects/git%2Bgithub.com%2FWinPooh32%2Fpeerstohttp?ref=badge_large)
