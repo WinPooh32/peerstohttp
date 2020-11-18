@@ -57,6 +57,7 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 	// Discovery services.
 	cfg.NoDHT = *service.NoDHT
 	cfg.DisableUTP = *service.NoUTP
+	cfg.DisableTCP = *service.NoTCP
 
 	cfg.DisableIPv4 = *service.NoIPv4
 	cfg.DisableIPv6 = *service.NoIPv6
