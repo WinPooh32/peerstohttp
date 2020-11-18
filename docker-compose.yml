@@ -1,0 +1,19 @@
+version: "2.4"
+services:
+  peerstohttp: 
+    container_name: peerstohttp
+    restart: unless-stopped
+    build: .
+    command:
+      - "-port"
+      - "80"
+#      - "-port-torr"
+#      - "6881"
+#      - "-no-tcp"
+#      - "-no-dht"
+#      - "-no-ipv6"
+#      - "-profile"
+#      - "-torr-debug"
+    network_mode: host
+#    ports:
+#      - "80:80"
