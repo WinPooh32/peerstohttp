@@ -12,6 +12,7 @@ type Settings struct {
 	UploadRate      *int
 	MaxConnections  *int
 	NoDHT           *bool
+	NoTCP           *bool
 	NoUTP           *bool
 	NoIPv4          *bool
 	NoIPv6          *bool
@@ -35,6 +36,7 @@ func (s *Settings) parse() {
 		UploadRate:      flag.Int("up-rate", 0, "upload speed rate in kib/s"),
 		MaxConnections:  flag.Int("max-connections", 50, "max connections per torrent"),
 		NoDHT:           flag.Bool("no-dht", false, "disable dht"),
+		NoTCP:           flag.Bool("no-tcp", false, "disable tcp"),
 		NoUTP:           flag.Bool("no-utp", false, "disable utp"),
 		NoIPv4:          flag.Bool("no-ipv4", false, "disable IPv4"),
 		NoIPv6:          flag.Bool("no-ipv6", false, "disable IPv6"),
