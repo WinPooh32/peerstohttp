@@ -37,7 +37,7 @@ func magnet(next http.Handler) http.Handler {
 		parts[0] = strings.ToLower(parts[0])
 
 		var magnetURI = chi.URLParam(r, "*") + "?" + strings.Join(parts, "&")
-		var magnet, err = metainfo.ParseMagnetURI(magnetURI)
+		var magnet, err = metainfo.ParseMagnetUri(magnetURI)
 
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
