@@ -4,6 +4,8 @@
 
 Simple torrent proxy to http stream controlled over REST-like api
 
+Built top on [anacrolix/torrent](https://github.com/anacrolix/torrent) lib.
+
 ## HTTP API
 ##### URL Parameters:
 * **playlist** - output file format, one of these values: `m3u`,`html`,`json`
