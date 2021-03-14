@@ -124,8 +124,8 @@ func (app *App) Client() *torrent.Client {
 	return app.client
 }
 
-func (app *App) Track(t *torrent.Torrent) error {
-	return app.track(t)
+func (app *App) Track(t *torrent.Torrent) (*torrent.Torrent, error) {
+	return app.TrackContext(context.Background(), t)
 }
 
 func (app *App) TrackHash(hash metainfo.Hash) (*torrent.Torrent, error) {
@@ -134,6 +134,10 @@ func (app *App) TrackHash(hash metainfo.Hash) (*torrent.Torrent, error) {
 
 func (app *App) TrackMagnet(magnet *metainfo.Magnet) (*torrent.Torrent, error) {
 	return app.TrackMagnetContext(context.Background(), magnet)
+}
+
+func (app *App) TrackContext(ctx context.Context, t *torrent.Torrent) (*torrent.Torrent, error) {
+	return t, app.trackContext(ctx, t)
 }
 
 func (app *App) TrackHashContext(ctx context.Context, hash metainfo.Hash) (*torrent.Torrent, error) {
@@ -224,16 +228,16 @@ func (app *App) track(t *torrent.Torrent) error {
 
 func (app *App) trackContext(ctx context.Context, t *torrent.Torrent) error {
 
-	var err = app.track(t)
-	if err != nil {
-		return fmt.Errorf("track torrent: %w", err)
-	}
-
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 
 	case <-t.GotInfo():
+	}
+
+	var err = app.track(t)
+	if err != nil {
+		return fmt.Errorf("track torrent: %w", err)
 	}
 
 	return nil

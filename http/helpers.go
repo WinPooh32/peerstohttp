@@ -23,7 +23,7 @@ func addNewTorrentHash(ctx context.Context, app *app.App, hash string) (*torrent
 	}
 
 	if new {
-		app.Track(t)
+		app.TrackContext(ctx, t)
 	}
 
 	select {
@@ -46,7 +46,7 @@ func addNewTorrentMagnet(ctx context.Context, app *app.App, magnetURI string) (*
 		return nil, false
 	}
 
-	app.Track(t)
+	app.TrackContext(ctx, t)
 
 	select {
 	case <-ctx.Done():

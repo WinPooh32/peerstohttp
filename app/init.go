@@ -99,6 +99,7 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 func db(path string) (*bbolt.DB, error) {
 	var db, err = bbolt.Open(path, 0600, &bbolt.Options{
 		Timeout: 5 * time.Second,
+		NoSync:  false,
 	})
 	if err != nil {
 		return nil, err
