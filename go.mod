@@ -1,6 +1,6 @@
 module github.com/WinPooh32/peerstohttp
 
-go 1.14
+go 1.15
 
 require (
 	github.com/anacrolix/log v0.8.0
