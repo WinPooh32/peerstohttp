@@ -49,6 +49,32 @@ Or open m3u playlist in VLC video player:
 $ vlc http://localhost/list/m3u/mp4/-/hash/08ada5a7a6183aae1e09d831df6748d566095a10
 ```
 
+Generate **m3u** files from list of magnets using wget and bash script:
+<details>
+  <summary>makelist.sh</summary>
+
+```bash
+#!/bin/bash
+
+magnets="magnets.txt"
+playlist_dir="playlists" 
+
+host="localhost"
+port="4444"
+
+exts="mp3,mp4,m4a,m4,flac"
+exclude_tags="live,interlude,demo,orchestral,orch,remix,mix,acoustic,instr,instrumental,synthesis,bonus,heavy"
+
+rm -f $playlist_dir/*m3u*
+
+while read line; do
+     wget --content-disposition --directory-prefix=$playlist_dir --tries=3 "http://$host:$port/list/m3u/$exts/$exclude_tags/magnet/$line"
+done < $magnets
+```
+
+</details>
+<br>
+
 ## Build steps
 utp dependency requires C compiler, then install it:  
 * Windows: download and install https://jmeubank.github.io/tdm-gcc/download/
