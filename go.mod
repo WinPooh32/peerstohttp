@@ -7,7 +7,6 @@ require (
 	github.com/anacrolix/multiless v0.1.0 // indirect
 	github.com/anacrolix/torrent v1.25.1
 	github.com/asaskevich/govalidator v0.0.0-20200907205600-7a23bdc65eef
-	github.com/boltdb/bolt v1.3.1
 	github.com/elliotchance/orderedmap v1.4.0 // indirect
 	github.com/go-chi/chi v4.1.2+incompatible
 	github.com/go-chi/cors v1.1.1
@@ -22,6 +21,7 @@ require (
 	github.com/pion/dtls/v2 v2.0.8 // indirect
 	github.com/pion/transport v0.12.3 // indirect
 	github.com/rs/zerolog v1.20.0
+	go.etcd.io/bbolt v1.3.5
 	golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83 // indirect
 	golang.org/x/net v0.0.0-20210226172049-e18ecbb05110 // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect

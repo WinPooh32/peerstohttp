@@ -9,7 +9,7 @@ import (
 	anacrolixlog "github.com/anacrolix/log"
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/mse"
-	"github.com/boltdb/bolt"
+	"go.etcd.io/bbolt"
 	"golang.org/x/time/rate"
 
 	"github.com/WinPooh32/peerstohttp/settings"
@@ -96,8 +96,8 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 	return torrent.NewClient(cfg)
 }
 
-func db(path string) (*bolt.DB, error) {
-	var db, err = bolt.Open(path, 0600, &bolt.Options{
+func db(path string) (*bbolt.DB, error) {
+	var db, err = bbolt.Open(path, 0600, &bbolt.Options{
 		Timeout: 5 * time.Second,
 	})
 	if err != nil {
@@ -105,7 +105,7 @@ func db(path string) (*bolt.DB, error) {
 	}
 
 	// Create buckets.
-	err = db.Update(func(tx *bolt.Tx) error {
+	err = db.Update(func(tx *bbolt.Tx) error {
 		var _, err = tx.CreateBucketIfNotExists([]byte(dbBucketInfo))
 		if err != nil {
 			return fmt.Errorf("create bucket: %w", err)

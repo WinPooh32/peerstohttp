@@ -9,8 +9,8 @@ import (
 	"sync"
 
 	"github.com/anacrolix/torrent"
-	"github.com/boltdb/bolt"
 	"github.com/rs/zerolog/log"
+	"go.etcd.io/bbolt"
 
 	"github.com/WinPooh32/peerstohttp/settings"
 
@@ -35,7 +35,7 @@ type App struct {
 	torrents map[string]*torrent.Torrent
 	mu       sync.RWMutex
 
-	db *bolt.DB
+	db *bbolt.DB
 
 	// Path to temporary data folder.
 	tmp string
@@ -48,7 +48,7 @@ func New(service *settings.Settings) (*App, error) {
 	var cwd string
 
 	var client *torrent.Client
-	var store *bolt.DB
+	var store *bbolt.DB
 
 	// Working directory.
 	if *service.DownloadDir == "" {
@@ -93,7 +93,7 @@ func (app *App) Load() error {
 	app.mu.Lock()
 	defer app.mu.Unlock()
 
-	return app.db.View(func(tx *bolt.Tx) error {
+	return app.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(dbBucketInfo))
 
 		return b.ForEach(func(k, v []byte) error {
@@ -207,7 +207,7 @@ func (app *App) track(t *torrent.Torrent) error {
 		return fmt.Errorf("write metaInfo: %w", err)
 	}
 
-	err = app.db.Update(func(tx *bolt.Tx) error {
+	err = app.db.Update(func(tx *bbolt.Tx) error {
 		var b = tx.Bucket([]byte(dbBucketInfo))
 		return b.Put(t.InfoHash().Bytes(), buf.Bytes())
 	})
