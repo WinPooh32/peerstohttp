@@ -1,17 +1,17 @@
-# crawshaw.io/sqlite v0.3.2
+# crawshaw.io/sqlite v0.3.3-0.20210127221821-98b1f83c5508
 crawshaw.io/sqlite
 crawshaw.io/sqlite/c
 crawshaw.io/sqlite/sqlitex
 # github.com/RoaringBitmap/roaring v0.5.5
 github.com/RoaringBitmap/roaring
-# github.com/anacrolix/dht/v2 v2.7.0
+# github.com/anacrolix/dht/v2 v2.8.0
 github.com/anacrolix/dht/v2
 github.com/anacrolix/dht/v2/krpc
 # github.com/anacrolix/envpprof v1.1.1
-## explicit
-# github.com/anacrolix/go-libutp v1.0.3
+github.com/anacrolix/envpprof
+# github.com/anacrolix/go-libutp v1.0.4
 github.com/anacrolix/go-libutp
-# github.com/anacrolix/log v0.7.1-0.20200604014615-c244de44fd2d
+# github.com/anacrolix/log v0.8.0
 ## explicit
 github.com/anacrolix/log
 # github.com/anacrolix/missinggo v1.2.1
@@ -39,21 +39,22 @@ github.com/anacrolix/missinggo/v2/resource
 # github.com/anacrolix/mmsg v1.0.0
 github.com/anacrolix/mmsg
 github.com/anacrolix/mmsg/socket
-# github.com/anacrolix/multiless v0.0.0-20200413040533-acfd16f65d5d
+# github.com/anacrolix/multiless v0.1.0
+## explicit
 github.com/anacrolix/multiless
-# github.com/anacrolix/stm v0.2.0
+# github.com/anacrolix/stm v0.2.1-0.20201002073511-c35a2c748c6a
 github.com/anacrolix/stm
 github.com/anacrolix/stm/rate
 github.com/anacrolix/stm/stmutil
 # github.com/anacrolix/sync v0.2.0
 github.com/anacrolix/sync
-# github.com/anacrolix/torrent v1.19.0
+# github.com/anacrolix/torrent v1.25.1
 ## explicit
 github.com/anacrolix/torrent
 github.com/anacrolix/torrent/bencode
 github.com/anacrolix/torrent/common
-github.com/anacrolix/torrent/internal/string-limiter
-github.com/anacrolix/torrent/internal/tmproot
+github.com/anacrolix/torrent/internal/limiter
+github.com/anacrolix/torrent/internal/testutil
 github.com/anacrolix/torrent/iplist
 github.com/anacrolix/torrent/logonce
 github.com/anacrolix/torrent/metainfo
@@ -67,7 +68,7 @@ github.com/anacrolix/torrent/webseed
 github.com/anacrolix/torrent/webtorrent
 # github.com/anacrolix/upnp v0.1.2-0.20200416075019-5e9378ed1425
 github.com/anacrolix/upnp
-# github.com/anacrolix/utp v0.0.0-20180219060659-9e0e1d1d0572
+# github.com/anacrolix/utp v0.1.0
 github.com/anacrolix/utp
 # github.com/asaskevich/govalidator v0.0.0-20200907205600-7a23bdc65eef
 ## explicit
@@ -87,11 +88,10 @@ github.com/davecgh/go-spew/spew
 github.com/dustin/go-humanize
 # github.com/edsrzf/mmap-go v1.0.0
 github.com/edsrzf/mmap-go
-# github.com/elliotchance/orderedmap v1.3.0
-github.com/elliotchance/orderedmap
-# github.com/frankban/quicktest v1.11.3
+# github.com/elliotchance/orderedmap v1.4.0
 ## explicit
-# github.com/glycerine/go-unsnap-stream v0.0.0-20190901134440-81cf024a9e0a
+github.com/elliotchance/orderedmap
+# github.com/glycerine/go-unsnap-stream v0.0.0-20210130063903-47dfef350d96
 github.com/glycerine/go-unsnap-stream
 # github.com/go-chi/chi v4.1.2+incompatible
 ## explicit
@@ -105,11 +105,12 @@ github.com/go-chi/cors
 github.com/go-chi/render
 # github.com/golang/protobuf v1.4.3
 github.com/golang/protobuf/proto
-# github.com/golang/snappy v0.0.2
+# github.com/golang/snappy v0.0.3
+## explicit
 github.com/golang/snappy
 # github.com/google/btree v1.0.0
 github.com/google/btree
-# github.com/google/uuid v1.1.2
+# github.com/google/uuid v1.2.0
 github.com/google/uuid
 # github.com/gopherjs/gopherjs v0.0.0-20200217142428-fce0ec30dd00
 ## explicit
@@ -136,7 +137,8 @@ github.com/lucas-clemente/quic-go/quictrace
 github.com/lucas-clemente/quic-go/quictrace/pb
 # github.com/marten-seemann/qtls v0.10.0
 github.com/marten-seemann/qtls
-# github.com/marten-seemann/qtls-go1-15 v0.1.1
+# github.com/marten-seemann/qtls-go1-15 v0.1.4
+## explicit
 github.com/marten-seemann/qtls-go1-15
 # github.com/mschoch/smat v0.2.0
 github.com/mschoch/smat
@@ -150,12 +152,26 @@ github.com/mschoch/smat
 github.com/philhofer/fwd
 # github.com/pion/datachannel v1.4.21
 github.com/pion/datachannel
-# github.com/pion/dtls/v2 v2.0.4
+# github.com/pion/dtls/v2 v2.0.8
+## explicit
 github.com/pion/dtls/v2
+github.com/pion/dtls/v2/internal/ciphersuite
 github.com/pion/dtls/v2/internal/closer
-github.com/pion/dtls/v2/internal/net/connctx
+github.com/pion/dtls/v2/internal/util
 github.com/pion/dtls/v2/pkg/crypto/ccm
+github.com/pion/dtls/v2/pkg/crypto/ciphersuite
+github.com/pion/dtls/v2/pkg/crypto/clientcertificate
+github.com/pion/dtls/v2/pkg/crypto/elliptic
 github.com/pion/dtls/v2/pkg/crypto/fingerprint
+github.com/pion/dtls/v2/pkg/crypto/hash
+github.com/pion/dtls/v2/pkg/crypto/prf
+github.com/pion/dtls/v2/pkg/crypto/signature
+github.com/pion/dtls/v2/pkg/crypto/signaturehash
+github.com/pion/dtls/v2/pkg/protocol
+github.com/pion/dtls/v2/pkg/protocol/alert
+github.com/pion/dtls/v2/pkg/protocol/extension
+github.com/pion/dtls/v2/pkg/protocol/handshake
+github.com/pion/dtls/v2/pkg/protocol/recordlayer
 # github.com/pion/ice v0.7.18
 github.com/pion/ice
 # github.com/pion/logging v0.2.2
@@ -170,7 +186,6 @@ github.com/pion/randutil
 # github.com/pion/rtcp v1.2.6
 github.com/pion/rtcp
 # github.com/pion/rtp v1.6.2
-## explicit
 github.com/pion/rtp
 github.com/pion/rtp/codecs
 # github.com/pion/sctp v1.7.11
@@ -182,7 +197,9 @@ github.com/pion/srtp
 # github.com/pion/stun v0.3.5
 github.com/pion/stun
 github.com/pion/stun/internal/hmac
-# github.com/pion/transport v0.12.0
+# github.com/pion/transport v0.12.3
+## explicit
+github.com/pion/transport/connctx
 github.com/pion/transport/deadline
 github.com/pion/transport/packetio
 github.com/pion/transport/replaydetector
@@ -204,7 +221,7 @@ github.com/pion/webrtc/v2/pkg/media
 github.com/pion/webrtc/v2/pkg/rtcerr
 # github.com/pkg/errors v0.9.1
 github.com/pkg/errors
-# github.com/rs/dnscache v0.0.0-20190621150935-06bb5526f76b
+# github.com/rs/dnscache v0.0.0-20210201191234-295bba877686
 github.com/rs/dnscache
 # github.com/rs/zerolog v1.20.0
 ## explicit
@@ -224,7 +241,7 @@ github.com/willf/bitset
 github.com/willf/bloom
 # go.etcd.io/bbolt v1.3.5
 go.etcd.io/bbolt
-# golang.org/x/crypto v0.0.0-20201217014255-9d1352758620
+# golang.org/x/crypto v0.0.0-20210220033148-5ea612d1eb83
 ## explicit
 golang.org/x/crypto/chacha20
 golang.org/x/crypto/chacha20poly1305
@@ -234,16 +251,17 @@ golang.org/x/crypto/curve25519
 golang.org/x/crypto/hkdf
 golang.org/x/crypto/internal/subtle
 golang.org/x/crypto/poly1305
-# golang.org/x/net v0.0.0-20201216054612-986b41b23924
+# golang.org/x/net v0.0.0-20210226172049-e18ecbb05110
 ## explicit
 golang.org/x/net/bpf
 golang.org/x/net/dns/dnsmessage
 golang.org/x/net/internal/iana
 golang.org/x/net/internal/socket
 golang.org/x/net/ipv4
-# golang.org/x/sync v0.0.0-20201207232520-09787c993a3a
+# golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+## explicit
 golang.org/x/sync/singleflight
-# golang.org/x/sys v0.0.0-20201214210602-f9fddec55a1e
+# golang.org/x/sys v0.0.0-20210313202042-bd2e13477e9c
 ## explicit
 golang.org/x/sys/cpu
 golang.org/x/sys/internal/unsafeheader
@@ -251,7 +269,7 @@ golang.org/x/sys/unix
 golang.org/x/sys/windows
 # golang.org/x/text v0.3.4
 ## explicit
-# golang.org/x/time v0.0.0-20201208040808-7e3f01d25324
+# golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 ## explicit
 golang.org/x/time/rate
 # golang.org/x/xerrors v0.0.0-20200804184101-5ec99f83aff1

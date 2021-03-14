@@ -118,10 +118,16 @@ type ClientConfig struct {
 	PublicIp4 net.IP
 	PublicIp6 net.IP
 
+	// Accept rate limiting affects excessive connection attempts from IPs that fail during
+	// handshakes or request torrents that we don't have.
 	DisableAcceptRateLimiting bool
 	// Don't add connections that have the same peer ID as an existing
 	// connection for a given Torrent.
 	DropDuplicatePeerIds bool
+	// Drop peers that are complete if we are also complete and have no use for the peer. This is a
+	// bit of a special case, since a peer could also be useless if they're just not interested, or
+	// we don't intend to obtain all of a torrent's data.
+	DropMutuallyCompletePeers bool
 
 	ConnTracker *conntrack.Instance
 
@@ -168,6 +174,7 @@ func NewDefaultClientConfig() *ClientConfig {
 		DownloadRateLimiter:       unlimited,
 		ConnTracker:               conntrack.NewInstance(),
 		DisableAcceptRateLimiting: true,
+		DropMutuallyCompletePeers: true,
 		HeaderObfuscationPolicy: HeaderObfuscationPolicy{
 			Preferred:        true,
 			RequirePreferred: false,
