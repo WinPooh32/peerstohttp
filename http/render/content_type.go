@@ -2,9 +2,7 @@ package render
 
 import (
 	"context"
-	"mime"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/render"
@@ -23,13 +21,13 @@ const (
 	ContentTypeM3U
 )
 
-func GetContentType(s string) ContentType {
-	switch strings.Split(s, ";")[0] {
-	case "text/html", "application/xhtml+xml":
+func ContentTypeFromString(s string) ContentType {
+	switch s {
+	case "html":
 		return ContentTypeHTML
-	case "application/json", "text/javascript":
+	case "json":
 		return ContentTypeJSON
-	case "application/mpegURL", "application/x-mpegurl", "audio/mpegurl", "audio/x-mpegurl":
+	case "m3u":
 		return ContentTypeM3U
 	default:
 		return ContentTypeUnknown
@@ -41,7 +39,8 @@ func GetAcceptedContentType(r *http.Request) ContentType {
 		return contentType
 	}
 
-	var contentType = GetContentType(mime.TypeByExtension("." + chi.URLParam(r, ParamContentType)))
+	var p = chi.URLParam(r, ParamContentType)
+	var contentType = ContentTypeFromString(p)
 
 	if contentType == ContentTypeUnknown {
 		contentType = ContentTypeJSON
