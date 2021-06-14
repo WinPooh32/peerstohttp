@@ -60,7 +60,7 @@ magnets="magnets.txt"
 playlist_dir="playlists" 
 
 host="localhost"
-port="4444"
+port="8484"
 
 exts="mp3,mp4,m4a,m4,flac"
 exclude_tags="live,interlude,demo,orchestral,orch,remix,mix,acoustic,instr,instrumental,synthesis,bonus,heavy"
@@ -103,7 +103,7 @@ $ go install -i github.com/WinPooh32/peerstohttp/cmd
 
 Run:
 ```
-$ go run github.com/WinPooh32/peerstohttp/cmd -port=8080 -dir="/path/to/download"
+$ go run github.com/WinPooh32/peerstohttp/cmd -port=8484 -dir="/path/to/download"
 ```
 
 * Usually, $GOPATH is "~/go";
