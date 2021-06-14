@@ -75,6 +75,12 @@ done < $magnets
 </details>
 <br>
 
+## Docker
+Run container with exposed 8484 http port:
+```
+$ docker run --volume downloads:/downloads -it -p 8484:80 winpooh32/peerstohttp:latest -dir=/downloads
+```
+
 ## Build steps
 utp dependency requires C compiler, then install it:  
 * Windows: download and install https://jmeubank.github.io/tdm-gcc/download/
