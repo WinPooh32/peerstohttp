@@ -61,6 +61,11 @@ func New(service *settings.Settings) (*App, error) {
 		cwd = *service.DownloadDir
 	}
 
+	err = os.MkdirAll(cwd, os.ModePerm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dir: %w", err)
+	}
+
 	client, err = p2p(service, cwd)
 	if err != nil {
 		return nil, fmt.Errorf("new torrent client: %w", err)
