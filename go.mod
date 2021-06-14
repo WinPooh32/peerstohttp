@@ -4,6 +4,7 @@ go 1.15
 
 require (
 	github.com/anacrolix/log v0.8.0
+	github.com/anacrolix/missinggo/v2 v2.5.0
 	github.com/anacrolix/multiless v0.1.0 // indirect
 	github.com/anacrolix/torrent v1.25.1
 	github.com/asaskevich/govalidator v0.0.0-20200907205600-7a23bdc65eef
