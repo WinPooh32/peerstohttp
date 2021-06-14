@@ -7,8 +7,11 @@ import (
 	"time"
 
 	anacrolixlog "github.com/anacrolix/log"
+	"github.com/anacrolix/missinggo/v2/filecache"
+	"github.com/anacrolix/missinggo/v2/resource"
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/mse"
+	"github.com/anacrolix/torrent/storage"
 	"go.etcd.io/bbolt"
 	"golang.org/x/time/rate"
 
@@ -93,6 +96,24 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 		cfg.Logger = anacrolixlog.Discard
 	}
 
+	// File cache.
+	var err error
+	var res resource.Provider
+	var capacity int64
+
+	if *service.CacheCapacity > 0 {
+		capacity = *service.CacheCapacity
+	} else {
+		capacity = -1
+	}
+
+	res, err = makeResourceProvider(cwd, capacity)
+	if err != nil {
+		return nil, fmt.Errorf("make resource provider: %w", err)
+	}
+
+	cfg.DefaultStorage = makeStorageProvider(res)
+
 	return torrent.NewClient(cfg)
 }
 
@@ -118,4 +139,22 @@ func db(path string) (*bbolt.DB, error) {
 	}
 
 	return db, nil
+}
+
+func makeResourceProvider(dir string, capacity int64) (resource.Provider, error) {
+	var err error
+	var fc *filecache.Cache
+
+	fc, err = filecache.NewCache(dir)
+	if err != nil {
+		return nil, fmt.Errorf("new file cache: %w", err)
+	}
+
+	fc.SetCapacity(capacity)
+
+	return fc.AsResourceProvider(), nil
+}
+
+func makeStorageProvider(res resource.Provider) storage.ClientImpl {
+	return storage.NewResourcePieces(res)
 }
