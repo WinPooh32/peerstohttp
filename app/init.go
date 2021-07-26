@@ -103,12 +103,12 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 
 	if *service.CacheCapacity > 0 {
 		capacity = *service.CacheCapacity
-	res, err = makeResourceProvider(cwd, capacity)
-	if err != nil {
-		return nil, fmt.Errorf("make resource provider: %w", err)
-	}
+		res, err = makeResourceProvider(cwd, capacity)
+		if err != nil {
+			return nil, fmt.Errorf("make resource provider: %w", err)
+		}
 
-	cfg.DefaultStorage = makeStorageProvider(res)
+		cfg.DefaultStorage = makeStorageProvider(res)
 	} else {
 		cfg.DefaultStorage = storage.NewFile(cwd)
 	}
