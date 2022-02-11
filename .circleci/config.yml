@@ -6,7 +6,7 @@ jobs:
   build:
     docker:
       # specify the version
-      - image: circleci/golang:1.15
+      - image: circleci/golang:1.17
 
     steps:
       - checkout # check out source code to working directory
