@@ -6,92 +6,90 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/anacrolix/missinggo"
+	"github.com/anacrolix/missinggo/v2"
 	"github.com/anacrolix/torrent/common"
 	"github.com/anacrolix/torrent/segments"
 
 	"github.com/anacrolix/torrent/metainfo"
 )
 
-// File-based storage for torrents, that isn't yet bound to a particular
-// torrent.
+// File-based storage for torrents, that isn't yet bound to a particular torrent.
 type fileClientImpl struct {
-	baseDir   string
-	pathMaker func(baseDir string, info *metainfo.Info, infoHash metainfo.Hash) string
-	pc        PieceCompletion
+	opts NewFileClientOpts
 }
 
-// The Default path maker just returns the current path
-func defaultPathMaker(baseDir string, info *metainfo.Info, infoHash metainfo.Hash) string {
-	return baseDir
-}
-
-func infoHashPathMaker(baseDir string, info *metainfo.Info, infoHash metainfo.Hash) string {
-	return filepath.Join(baseDir, infoHash.HexString())
-}
-
-// All Torrent data stored in this baseDir
+// All Torrent data stored in this baseDir. The info names of each torrent are used as directories.
 func NewFile(baseDir string) ClientImplCloser {
 	return NewFileWithCompletion(baseDir, pieceCompletionForDir(baseDir))
 }
 
-func NewFileWithCompletion(baseDir string, completion PieceCompletion) *fileClientImpl {
-	return newFileWithCustomPathMakerAndCompletion(baseDir, nil, completion)
+type NewFileClientOpts struct {
+	// The base directory for all downloads.
+	ClientBaseDir   string
+	FilePathMaker   FilePathMaker
+	TorrentDirMaker TorrentDirFilePathMaker
+	PieceCompletion PieceCompletion
 }
 
-// File storage with data partitioned by infohash.
-func NewFileByInfoHash(baseDir string) ClientImpl {
-	return NewFileWithCustomPathMaker(baseDir, infoHashPathMaker)
-}
-
-// Allows passing a function to determine the path for storing torrent data. The function is
-// responsible for sanitizing the info if it uses some part of it (for example sanitizing
-// info.Name).
-func NewFileWithCustomPathMaker(baseDir string, pathMaker func(baseDir string, info *metainfo.Info, infoHash metainfo.Hash) string) ClientImpl {
-	return newFileWithCustomPathMakerAndCompletion(baseDir, pathMaker, pieceCompletionForDir(baseDir))
-}
-
-func newFileWithCustomPathMakerAndCompletion(baseDir string, pathMaker func(baseDir string, info *metainfo.Info, infoHash metainfo.Hash) string, completion PieceCompletion) *fileClientImpl {
-	if pathMaker == nil {
-		pathMaker = defaultPathMaker
+// NewFileOpts creates a new ClientImplCloser that stores files using the OS native filesystem.
+func NewFileOpts(opts NewFileClientOpts) ClientImplCloser {
+	if opts.TorrentDirMaker == nil {
+		opts.TorrentDirMaker = defaultPathMaker
 	}
-	return &fileClientImpl{
-		baseDir:   baseDir,
-		pathMaker: pathMaker,
-		pc:        completion,
+	if opts.FilePathMaker == nil {
+		opts.FilePathMaker = func(opts FilePathMakerOpts) string {
+			var parts []string
+			if opts.Info.Name != metainfo.NoName {
+				parts = append(parts, opts.Info.Name)
+			}
+			return filepath.Join(append(parts, opts.File.Path...)...)
+		}
 	}
+	if opts.PieceCompletion == nil {
+		opts.PieceCompletion = pieceCompletionForDir(opts.ClientBaseDir)
+	}
+	return fileClientImpl{opts}
 }
 
-func (me *fileClientImpl) Close() error {
-	return me.pc.Close()
+func (me fileClientImpl) Close() error {
+	return me.opts.PieceCompletion.Close()
 }
 
-func (fs *fileClientImpl) OpenTorrent(info *metainfo.Info, infoHash metainfo.Hash) (TorrentImpl, error) {
-	dir := fs.pathMaker(fs.baseDir, info, infoHash)
+func (fs fileClientImpl) OpenTorrent(info *metainfo.Info, infoHash metainfo.Hash) (_ TorrentImpl, err error) {
+	dir := fs.opts.TorrentDirMaker(fs.opts.ClientBaseDir, info, infoHash)
 	upvertedFiles := info.UpvertedFiles()
 	files := make([]file, 0, len(upvertedFiles))
 	for i, fileInfo := range upvertedFiles {
-		s, err := ToSafeFilePath(append([]string{info.Name}, fileInfo.Path...)...)
-		if err != nil {
-			return nil, fmt.Errorf("file %v has unsafe path %q: %w", i, fileInfo.Path, err)
+		filePath := filepath.Join(dir, fs.opts.FilePathMaker(FilePathMakerOpts{
+			Info: info,
+			File: &fileInfo,
+		}))
+		if !isSubFilepath(dir, filePath) {
+			err = fmt.Errorf("file %v: path %q is not sub path of %q", i, filePath, dir)
+			return
 		}
 		f := file{
-			path:   filepath.Join(dir, s),
+			path:   filePath,
 			length: fileInfo.Length,
 		}
 		if f.length == 0 {
 			err = CreateNativeZeroLengthFile(f.path)
 			if err != nil {
-				return nil, fmt.Errorf("creating zero length file: %w", err)
+				err = fmt.Errorf("creating zero length file: %w", err)
+				return
 			}
 		}
 		files = append(files, f)
 	}
-	return &fileTorrentImpl{
+	t := &fileTorrentImpl{
 		files,
 		segments.NewIndex(common.LengthIterFromUpvertedFiles(upvertedFiles)),
 		infoHash,
-		fs.pc,
+		fs.opts.PieceCompletion,
+	}
+	return TorrentImpl{
+		Piece: t.Piece,
+		Close: t.Close,
 	}, nil
 }
 
@@ -128,7 +126,7 @@ func (fs *fileTorrentImpl) Close() error {
 // writes will ever occur to them (no torrent data is associated with a zero-length file). The
 // caller should make sure the file name provided is safe/sanitized.
 func CreateNativeZeroLengthFile(name string) error {
-	os.MkdirAll(filepath.Dir(name), 0777)
+	os.MkdirAll(filepath.Dir(name), 0o777)
 	var f io.Closer
 	f, err := os.Create(name)
 	if err != nil {
@@ -187,18 +185,18 @@ func (fst fileTorrentImplIO) ReadAt(b []byte, off int64) (n int, err error) {
 }
 
 func (fst fileTorrentImplIO) WriteAt(p []byte, off int64) (n int, err error) {
-	//log.Printf("write at %v: %v bytes", off, len(p))
+	// log.Printf("write at %v: %v bytes", off, len(p))
 	fst.fts.segmentLocater.Locate(segments.Extent{off, int64(len(p))}, func(i int, e segments.Extent) bool {
 		name := fst.fts.files[i].path
-		os.MkdirAll(filepath.Dir(name), 0777)
+		os.MkdirAll(filepath.Dir(name), 0o777)
 		var f *os.File
-		f, err = os.OpenFile(name, os.O_WRONLY|os.O_CREATE, 0666)
+		f, err = os.OpenFile(name, os.O_WRONLY|os.O_CREATE, 0o666)
 		if err != nil {
 			return false
 		}
 		var n1 int
 		n1, err = f.WriteAt(p[:e.Length], e.Start)
-		//log.Printf("%v %v wrote %v: %v", i, e, n1, err)
+		// log.Printf("%v %v wrote %v: %v", i, e, n1, err)
 		closeErr := f.Close()
 		n += n1
 		p = p[n1:]

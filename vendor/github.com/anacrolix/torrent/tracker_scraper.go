@@ -18,9 +18,10 @@ import (
 // Announces a torrent to a tracker at regular intervals, when peers are
 // required.
 type trackerScraper struct {
-	u            url.URL
-	t            *Torrent
-	lastAnnounce trackerAnnounceResult
+	u               url.URL
+	t               *Torrent
+	lastAnnounce    trackerAnnounceResult
+	lookupTrackerIp func(*url.URL) ([]net.IP, error)
 }
 
 type torrentTrackerAnnouncer interface {
@@ -66,12 +67,24 @@ type trackerAnnounceResult struct {
 }
 
 func (me *trackerScraper) getIp() (ip net.IP, err error) {
-	ips, err := net.LookupIP(me.u.Hostname())
+	var ips []net.IP
+	if me.lookupTrackerIp != nil {
+		ips, err = me.lookupTrackerIp(&me.u)
+	} else {
+		// Do a regular dns lookup
+		ips, err = net.LookupIP(me.u.Hostname())
+	}
 	if err != nil {
 		return
 	}
 	if len(ips) == 0 {
 		err = errors.New("no ips")
+		return
+	}
+	me.t.cl.rLock()
+	defer me.t.cl.rUnlock()
+	if me.t.cl.closed.IsSet() {
+		err = errors.New("client is closed")
 		return
 	}
 	for _, ip = range ips {
@@ -105,7 +118,6 @@ func (me *trackerScraper) trackerUrl(ip net.IP) string {
 // Return how long to wait before trying again. For most errors, we return 5
 // minutes, a relatively quick turn around for DNS changes.
 func (me *trackerScraper) announce(ctx context.Context, event tracker.AnnounceEvent) (ret trackerAnnounceResult) {
-
 	defer func() {
 		ret.Completed = time.Now()
 	}()
@@ -183,7 +195,6 @@ func (me *trackerScraper) canIgnoreInterval(notify *<-chan struct{}) bool {
 }
 
 func (me *trackerScraper) Run() {
-
 	defer me.announceStopped()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -216,7 +227,6 @@ func (me *trackerScraper) Run() {
 
 		me.t.cl.lock()
 		wantPeers := me.t.wantPeersEvent.C()
-		closed := me.t.closed.C()
 		me.t.cl.unlock()
 
 		// If we want peers, reduce the interval to the minimum if it's appropriate.
@@ -234,7 +244,7 @@ func (me *trackerScraper) Run() {
 		}
 
 		select {
-		case <-closed:
+		case <-me.t.closed.Done():
 			return
 		case <-reconsider:
 			// Recalculate the interval.

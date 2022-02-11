@@ -18,7 +18,7 @@ const (
 type pexConnState struct {
 	enabled bool
 	xid     pp.ExtensionNumber
-	seq     int
+	last    *pexEvent
 	timer   *time.Timer
 	gate    chan struct{}
 	readyfn func()
@@ -39,7 +39,7 @@ func (s *pexConnState) Init(c *PeerConn) {
 		return
 	}
 	s.xid = xid
-	s.seq = 0
+	s.last = nil
 	s.torrent = c.t
 	s.info = c.t.cl.logger.WithDefaultLevel(log.Info)
 	s.dbg = c.logger.WithDefaultLevel(log.Debug)
@@ -59,11 +59,11 @@ func (s *pexConnState) sched(delay time.Duration) {
 
 // generate next PEX message for the peer; returns nil if nothing yet to send
 func (s *pexConnState) genmsg() *pp.PexMsg {
-	tx, seq := s.torrent.pex.Genmsg(s.seq)
+	tx, last := s.torrent.pex.Genmsg(s.last)
 	if tx.Len() == 0 {
 		return nil
 	}
-	s.seq = seq
+	s.last = last
 	return &tx
 }
 
@@ -88,6 +88,15 @@ func (s *pexConnState) Share(postfn messageWriter) bool {
 
 // Recv is called from the reader goroutine
 func (s *pexConnState) Recv(payload []byte) error {
+	if !s.torrent.wantPeers() {
+		s.dbg.Printf("peer reserve ok, incoming PEX discarded")
+		return nil
+	}
+	if time.Now().Before(s.torrent.pex.rest) {
+		s.dbg.Printf("in cooldown period, incoming PEX discarded")
+		return nil
+	}
+
 	rx, err := pp.LoadPexMsg(payload)
 	if err != nil {
 		return fmt.Errorf("error unmarshalling PEX message: %s", err)
@@ -100,8 +109,10 @@ func (s *pexConnState) Recv(payload []byte) error {
 	peers.AppendFromPex(rx.Added6, rx.Added6Flags)
 	peers.AppendFromPex(rx.Added, rx.AddedFlags)
 	s.dbg.Printf("adding %d peers from PEX", len(peers))
-	s.torrent.addPeers(peers)
-	// s.dbg.Print("known swarm now:", s.torrent.KnownSwarm())
+	if len(peers) > 0 {
+		s.torrent.pex.rest = time.Now().Add(pexInterval)
+		s.torrent.addPeers(peers)
+	}
 
 	// one day we may also want to:
 	// - check if the peer is not flooding us with PEX updates

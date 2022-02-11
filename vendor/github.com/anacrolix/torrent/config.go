@@ -9,9 +9,8 @@ import (
 	"github.com/anacrolix/dht/v2"
 	"github.com/anacrolix/dht/v2/krpc"
 	"github.com/anacrolix/log"
-	"github.com/anacrolix/missinggo"
-	"github.com/anacrolix/missinggo/expect"
-	"github.com/anacrolix/missinggo/v2/conntrack"
+	"github.com/anacrolix/missinggo/v2"
+	"github.com/anacrolix/torrent/version"
 	"golang.org/x/time/rate"
 
 	"github.com/anacrolix/torrent/iplist"
@@ -37,6 +36,10 @@ type ClientConfig struct {
 	// Don't create a DHT.
 	NoDHT            bool `long:"disable-dht"`
 	DhtStartingNodes func(network string) dht.StartingNodesGetter
+	// Called for each anacrolix/dht Server created for the Client.
+	ConfigureAnacrolixDhtServer       func(*dht.ServerConfig)
+	PeriodicallyAnnounceTorrentsToDht bool
+
 	// Never send chunks to peers.
 	NoUpload bool `long:"no-upload"`
 	// Disable uploading even when it isn't fair.
@@ -56,6 +59,8 @@ type ClientConfig struct {
 	// (~4096), and the requested chunk size (~16KiB, see
 	// TorrentSpec.ChunkSize).
 	DownloadRateLimiter *rate.Limiter
+	// Maximum unverified bytes across all torrents. Not used if zero.
+	MaxUnverifiedBytes int64
 
 	// User-provided Client peer ID. If not present, one is generated automatically.
 	PeerID string
@@ -85,6 +90,9 @@ type ClientConfig struct {
 	// Defines proxy for HTTP requests, such as for trackers. It's commonly set from the result of
 	// "net/http".ProxyURL(HTTPProxy).
 	HTTPProxy func(*http.Request) (*url.URL, error)
+	// Takes a tracker's hostname and requests DNS A and AAAA records.
+	// Used in case DNS lookups require a special setup (i.e., dns-over-https)
+	LookupTrackerIp func(*url.URL) ([]net.IP, error)
 	// HTTPUserAgent changes default UserAgent for HTTP requests
 	HTTPUserAgent string
 	// Updated occasionally to when there's been some changes to client
@@ -112,6 +120,9 @@ type ClientConfig struct {
 	// impact of a few bad apples. 4s loses 1% of successful handshakes that
 	// are obtained with 60s timeout, and 5% of unsuccessful handshakes.
 	HandshakesTimeout time.Duration
+	// How long between writes before sending a keep alive message on a peer connection that we want
+	// to maintain.
+	KeepAliveTimeout time.Duration
 
 	// The IP addresses as our peers should see them. May differ from the
 	// local interfaces due to NAT or other network configurations.
@@ -128,15 +139,18 @@ type ClientConfig struct {
 	// bit of a special case, since a peer could also be useless if they're just not interested, or
 	// we don't intend to obtain all of a torrent's data.
 	DropMutuallyCompletePeers bool
-
-	ConnTracker *conntrack.Instance
+	// Whether to accept peer connections at all.
+	AcceptPeerConnections bool
+	// Whether a Client should want conns without delegating to any attached Torrents. This is
+	// useful when torrents might be added dynmically in callbacks for example.
+	AlwaysWantConns bool
 
 	// OnQuery hook func
 	DHTOnQuery func(query *krpc.Msg, source net.Addr) (propagate bool)
 
-	DefaultRequestStrategy requestStrategyMaker
-
 	Extensions PeerExtensionBits
+	// Bits that peers must have set to proceed past handshakes.
+	MinPeerExtensions PeerExtensionBits
 
 	DisableWebtorrent bool
 	DisableWebseeds   bool
@@ -146,7 +160,9 @@ type ClientConfig struct {
 
 func (cfg *ClientConfig) SetListenAddr(addr string) *ClientConfig {
 	host, port, err := missinggo.ParseHostPort(addr)
-	expect.Nil(err)
+	if err != nil {
+		panic(err)
+	}
 	cfg.ListenHost = func(string) string { return host }
 	cfg.ListenPort = port
 	return cfg
@@ -154,10 +170,10 @@ func (cfg *ClientConfig) SetListenAddr(addr string) *ClientConfig {
 
 func NewDefaultClientConfig() *ClientConfig {
 	cc := &ClientConfig{
-		HTTPUserAgent:                  "Go-Torrent/1.0",
-		ExtendedHandshakeClientVersion: "go.torrent dev 20181121",
-		Bep20:                          "-GT0002-",
-		UpnpID:                         "anacrolix/torrent",
+		HTTPUserAgent:                  version.DefaultHttpUserAgent,
+		ExtendedHandshakeClientVersion: version.DefaultExtendedHandshakeClientVersion,
+		Bep20:                          version.DefaultBep20Prefix,
+		UpnpID:                         version.DefaultUpnpId,
 		NominalDialTimeout:             20 * time.Second,
 		MinDialTimeout:                 3 * time.Second,
 		EstablishedConnsPerTorrent:     50,
@@ -166,30 +182,28 @@ func NewDefaultClientConfig() *ClientConfig {
 		TorrentPeersHighWater:          500,
 		TorrentPeersLowWater:           50,
 		HandshakesTimeout:              4 * time.Second,
+		KeepAliveTimeout:               time.Minute,
 		DhtStartingNodes: func(network string) dht.StartingNodesGetter {
 			return func() ([]dht.Addr, error) { return dht.GlobalBootstrapAddrs(network) }
 		},
-		ListenHost:                func(string) string { return "" },
-		UploadRateLimiter:         unlimited,
-		DownloadRateLimiter:       unlimited,
-		ConnTracker:               conntrack.NewInstance(),
-		DisableAcceptRateLimiting: true,
-		DropMutuallyCompletePeers: true,
+		PeriodicallyAnnounceTorrentsToDht: true,
+		ListenHost:                        func(string) string { return "" },
+		UploadRateLimiter:                 unlimited,
+		DownloadRateLimiter:               unlimited,
+		DisableAcceptRateLimiting:         true,
+		DropMutuallyCompletePeers:         true,
 		HeaderObfuscationPolicy: HeaderObfuscationPolicy{
 			Preferred:        true,
 			RequirePreferred: false,
 		},
-		CryptoSelector: mse.DefaultCryptoSelector,
-		CryptoProvides: mse.AllSupportedCrypto,
-		ListenPort:     42069,
-		Logger:         log.Default,
-
-		DefaultRequestStrategy: RequestStrategyDuplicateRequestTimeout(5 * time.Second),
-
-		Extensions: defaultPeerExtensionBytes(),
+		CryptoSelector:        mse.DefaultCryptoSelector,
+		CryptoProvides:        mse.AllSupportedCrypto,
+		ListenPort:            42069,
+		Extensions:            defaultPeerExtensionBytes(),
+		AcceptPeerConnections: true,
 	}
-	//cc.ConnTracker.SetNoMaxEntries()
-	//cc.ConnTracker.Timeout = func(conntrack.Entry) time.Duration { return 0 }
+	// cc.ConnTracker.SetNoMaxEntries()
+	// cc.ConnTracker.Timeout = func(conntrack.Entry) time.Duration { return 0 }
 	return cc
 }
 

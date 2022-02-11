@@ -2,6 +2,7 @@ package metainfo
 
 import (
 	"io"
+	"net/url"
 	"os"
 	"time"
 
@@ -20,7 +21,7 @@ type MetaInfo struct {
 	Comment      string  `bencode:"comment,omitempty"`
 	CreatedBy    string  `bencode:"created by,omitempty"`
 	Encoding     string  `bencode:"encoding,omitempty"`
-	UrlList      UrlList `bencode:"url-list,omitempty"` // BEP 19
+	UrlList      UrlList `bencode:"url-list,omitempty"` // BEP 19 WebSeeds
 }
 
 // Load a MetaInfo from an io.Reader. Returns a non-nil error in case of
@@ -67,13 +68,19 @@ func (mi *MetaInfo) SetDefaults() {
 	// mi.Info.PieceLength = 256 * 1024
 }
 
-// Creates a Magnet from a MetaInfo.
-func (mi *MetaInfo) Magnet(displayName string, infoHash Hash) (m Magnet) {
-	for t := range mi.UpvertedAnnounceList().DistinctValues() {
-		m.Trackers = append(m.Trackers, t)
+// Creates a Magnet from a MetaInfo. Optional infohash and parsed info can be provided.
+func (mi *MetaInfo) Magnet(infoHash *Hash, info *Info) (m Magnet) {
+	m.Trackers = append(m.Trackers, mi.UpvertedAnnounceList().DistinctValues()...)
+	if info != nil {
+		m.DisplayName = info.Name
 	}
-	m.DisplayName = displayName
-	m.InfoHash = infoHash
+	if infoHash != nil {
+		m.InfoHash = *infoHash
+	} else {
+		m.InfoHash = mi.HashInfoBytes()
+	}
+	m.Params = make(url.Values)
+	m.Params["ws"] = mi.UrlList
 	return
 }
 

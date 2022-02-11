@@ -4,30 +4,29 @@ import (
 	"errors"
 	"net"
 
+	"github.com/RoaringBitmap/roaring"
 	"github.com/anacrolix/missinggo/v2"
+	"github.com/anacrolix/torrent/types"
 	"golang.org/x/time/rate"
 
 	"github.com/anacrolix/torrent/metainfo"
 	pp "github.com/anacrolix/torrent/peer_protocol"
 )
 
-type ChunkSpec struct {
-	Begin, Length pp.Integer
-}
+type (
+	Request       = types.Request
+	ChunkSpec     = types.ChunkSpec
+	piecePriority = types.PiecePriority
+)
 
-type Request struct {
-	Index pp.Integer
-	ChunkSpec
-}
-
-func (r Request) ToMsg(mt pp.MessageType) pp.Message {
-	return pp.Message{
-		Type:   mt,
-		Index:  r.Index,
-		Begin:  r.Begin,
-		Length: r.Length,
-	}
-}
+const (
+	PiecePriorityNormal    = types.PiecePriorityNormal
+	PiecePriorityNone      = types.PiecePriorityNone
+	PiecePriorityNow       = types.PiecePriorityNow
+	PiecePriorityReadahead = types.PiecePriorityReadahead
+	PiecePriorityNext      = types.PiecePriorityNext
+	PiecePriorityHigh      = types.PiecePriorityHigh
+)
 
 func newRequest(index, begin, length pp.Integer) Request {
 	return Request{index, ChunkSpec{begin, length}}
@@ -45,7 +44,7 @@ func newRequestFromMessage(msg *pp.Message) Request {
 }
 
 // The size in bytes of a metadata extension piece.
-func metadataPieceSize(totalSize int, piece int) int {
+func metadataPieceSize(totalSize, piece int) int {
 	ret := totalSize - piece*(1<<14)
 	if ret > 1<<14 {
 		ret = 1 << 14
@@ -54,8 +53,11 @@ func metadataPieceSize(totalSize int, piece int) int {
 }
 
 // Return the request that would include the given offset into the torrent data.
-func torrentOffsetRequest(torrentLength, pieceSize, chunkSize, offset int64) (
-	r Request, ok bool) {
+func torrentOffsetRequest(
+	torrentLength, pieceSize, chunkSize, offset int64,
+) (
+	r Request, ok bool,
+) {
 	if offset < 0 || offset >= torrentLength {
 		return
 	}
@@ -98,7 +100,7 @@ func validateInfo(info *metainfo.Info) error {
 	return nil
 }
 
-func chunkIndexSpec(index pp.Integer, pieceLength, chunkSize pp.Integer) ChunkSpec {
+func chunkIndexSpec(index, pieceLength, chunkSize pp.Integer) ChunkSpec {
 	ret := ChunkSpec{pp.Integer(index) * chunkSize, chunkSize}
 	if ret.Begin+ret.Length > pieceLength {
 		ret.Length = pieceLength - ret.Begin
@@ -141,7 +143,27 @@ func max(as ...int64) int64 {
 	return ret
 }
 
+func maxInt(as ...int) int {
+	ret := as[0]
+	for _, a := range as[1:] {
+		if a > ret {
+			ret = a
+		}
+	}
+	return ret
+}
+
 func min(as ...int64) int64 {
+	ret := as[0]
+	for _, a := range as[1:] {
+		if a < ret {
+			ret = a
+		}
+	}
+	return ret
+}
+
+func minInt(as ...int) int {
 	ret := as[0]
 	for _, a := range as[1:] {
 		if a < ret {
@@ -158,3 +180,12 @@ type (
 	InfoHash   = metainfo.Hash
 	IpPort     = missinggo.IpPort
 )
+
+func boolSliceToBitmap(slice []bool) (rb roaring.Bitmap) {
+	for i, b := range slice {
+		if b {
+			rb.AddInt(i)
+		}
+	}
+	return
+}

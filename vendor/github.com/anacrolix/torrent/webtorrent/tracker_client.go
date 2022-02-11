@@ -12,7 +12,7 @@ import (
 	"github.com/anacrolix/torrent/tracker"
 	"github.com/gorilla/websocket"
 	"github.com/pion/datachannel"
-	"github.com/pion/webrtc/v2"
+	"github.com/pion/webrtc/v3"
 )
 
 type TrackerClientStats struct {
@@ -28,6 +28,7 @@ type TrackerClient struct {
 	PeerId             [20]byte
 	OnConn             onDataChannelOpen
 	Logger             log.Logger
+	Dialer             *websocket.Dialer
 
 	mu             sync.Mutex
 	cond           sync.Cond
@@ -67,8 +68,10 @@ type onDataChannelOpen func(_ datachannel.ReadWriteCloser, dcc DataChannelContex
 
 func (tc *TrackerClient) doWebsocket() error {
 	metrics.Add("websocket dials", 1)
+	tc.mu.Lock()
 	tc.stats.Dials++
-	c, _, err := websocket.DefaultDialer.Dial(tc.Url, nil)
+	tc.mu.Unlock()
+	c, _, err := tc.Dialer.Dial(tc.Url, nil)
 	if err != nil {
 		return fmt.Errorf("dialing tracker: %w", err)
 	}
@@ -104,9 +107,18 @@ func (tc *TrackerClient) doWebsocket() error {
 	return err
 }
 
-func (tc *TrackerClient) Run() error {
+// Finishes initialization and spawns the run routine, calling onStop when it completes with the
+// result. We don't let the caller just spawn the runner directly, since then we can race against
+// .Close to finish initialization.
+func (tc *TrackerClient) Start(onStop func(error)) {
 	tc.pingTicker = time.NewTicker(60 * time.Second)
 	tc.cond.L = &tc.mu
+	go func() {
+		onStop(tc.run())
+	}()
+}
+
+func (tc *TrackerClient) run() error {
 	tc.mu.Lock()
 	for !tc.closed {
 		tc.mu.Unlock()
@@ -139,7 +151,6 @@ func (tc *TrackerClient) Close() error {
 }
 
 func (tc *TrackerClient) announceOffers() {
-
 	// tc.Announce grabs a lock on tc.outboundOffers. It also handles the case where outboundOffers
 	// is nil. Take ownership of outboundOffers here.
 	tc.mu.Lock()
@@ -245,7 +256,7 @@ func (tc *TrackerClient) trackerReadLoop(tracker *websocket.Conn) error {
 		if err != nil {
 			return fmt.Errorf("read message error: %w", err)
 		}
-		//tc.Logger.WithDefaultLevel(log.Debug).Printf("received message from tracker: %q", message)
+		// tc.Logger.WithDefaultLevel(log.Debug).Printf("received message from tracker: %q", message)
 
 		var ar AnnounceResponse
 		if err := json.Unmarshal(message, &ar); err != nil {
@@ -323,10 +334,10 @@ func (tc *TrackerClient) handleAnswer(offerId string, answer webrtc.SessionDescr
 	defer tc.mu.Unlock()
 	offer, ok := tc.outboundOffers[offerId]
 	if !ok {
-		tc.Logger.WithDefaultLevel(log.Warning).Printf("could not find offer for id %q", offerId)
+		tc.Logger.WithDefaultLevel(log.Warning).Printf("could not find offer for id %+q", offerId)
 		return
 	}
-	//tc.Logger.WithDefaultLevel(log.Debug).Printf("offer %q got answer %v", offerId, answer)
+	// tc.Logger.WithDefaultLevel(log.Debug).Printf("offer %q got answer %v", offerId, answer)
 	metrics.Add("outbound offers answered", 1)
 	err := offer.setAnswer(answer, func(dc datachannel.ReadWriteCloser) {
 		metrics.Add("outbound offers answered with datachannel", 1)

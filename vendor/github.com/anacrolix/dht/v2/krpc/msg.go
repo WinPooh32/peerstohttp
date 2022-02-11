@@ -1,13 +1,9 @@
 package krpc
 
-import (
-	"fmt"
-)
-
 // Msg represents messages that nodes in the network send to each other as specified by the protocol.
 // They are also referred to as the KRPC messages.
 // There are three types of messages: QUERY, RESPONSE, ERROR
-// The message is a dictonary that is then
+// The message is a dictionary that is then
 // "bencoded" (serialization & compression format adopted by the BitTorrent)
 // and sent via the UDP connection to peers.
 //
@@ -24,19 +20,31 @@ type Msg struct {
 	R        *Return  `bencode:"r,omitempty"` // RESPONSE type only
 	E        *Error   `bencode:"e,omitempty"` // ERROR type only
 	IP       NodeAddr `bencode:"ip,omitempty"`
-	ReadOnly bool     `bencode:"ro,omitempty"`
+	ReadOnly bool     `bencode:"ro,omitempty"` // BEP 43. Sender does not respond to queries.
 }
 
 type MsgArgs struct {
-	ID          ID     `bencode:"id"`                     // ID of the querying Node
-	InfoHash    ID     `bencode:"info_hash,omitempty"`    // InfoHash of the torrent
-	Target      ID     `bencode:"target,omitempty"`       // ID of the node sought
-	Token       string `bencode:"token,omitempty"`        // Token received from an earlier get_peers query
+	ID       ID `bencode:"id"`                  // ID of the querying Node
+	InfoHash ID `bencode:"info_hash,omitempty"` // InfoHash of the torrent
+	Target   ID `bencode:"target,omitempty"`    // ID of the node sought
+	// Token received from an earlier get_peers query. Also used in a BEP 44 put.
+	Token       string `bencode:"token,omitempty"`
 	Port        *int   `bencode:"port,omitempty"`         // Sender's torrent port
 	ImpliedPort bool   `bencode:"implied_port,omitempty"` // Use senders apparent DHT port
 	Want        []Want `bencode:"want,omitempty"`         // Contains strings like "n4" and "n6" from BEP 32.
 	NoSeed      int    `bencode:"noseed,omitempty"`       // BEP 33
 	Scrape      int    `bencode:"scrape,omitempty"`       // BEP 33
+
+	// BEP 44
+
+	// I don't know if we should use bencode.Bytes for this. If we unmarshalled bytes that didn't
+	// marshal back the same, our hashes will not match. But this might also serve to prevent abuse.
+	V    interface{} `bencode:"v,omitempty"`
+	Seq  *int64      `bencode:"seq,omitempty"`
+	Cas  int64       `bencode:"cas,omitempty"`
+	K    [32]byte    `bencode:"k,omitempty"`
+	Salt []byte      `bencode:"salt,omitempty"`
+	Sig  [64]byte    `bencode:"sig,omitempty"`
 }
 
 type Want string
@@ -46,16 +54,43 @@ const (
 	WantNodes6 Want = "n6"
 )
 
-type Return struct {
-	ID     ID                  `bencode:"id"`               // ID of the queried node
-	Nodes  CompactIPv4NodeInfo `bencode:"nodes,omitempty"`  // K closest nodes to the requested target
-	Nodes6 CompactIPv6NodeInfo `bencode:"nodes6,omitempty"` // K closest nodes to the requested target
-	Token  *string             `bencode:"token,omitempty"`  // Token for future announce_peer
-	Values []NodeAddr          `bencode:"values,omitempty"` // Torrent peers
+// BEP 51 (DHT Infohash Indexing)
+type Bep51Return struct {
+	Interval *int64 `bencode:"interval,omitempty"`
+	Num      *int64 `bencode:"num,omitempty"`
+	// Nodes supporting this extension should always include the samples field in the response, even
+	// when it is zero-length. This lets indexing nodes to distinguish nodes supporting this
+	// extension from those that respond to unknown query types which contain a target field [2].
+	Samples *CompactInfohashes `bencode:"samples,omitempty"`
+}
 
-	// BEP 33
+type Bep44Return struct {
+	V   interface{} `bencode:"v,omitempty"`
+	K   [32]byte    `bencode:"k,omitempty"`
+	Sig [64]byte    `bencode:"sig,omitempty"`
+	Seq *int64      `bencode:"seq,omitempty"`
+}
+
+type Return struct {
+	// All returns are supposed to contain an ID, but what if they don't?
+	ID ID `bencode:"id"` // ID of the queried (and responding) node
+
+	// K closest nodes to the requested target. Included in responses to queries that imply
+	// traversal, for example get_peers, find_nodes, get, sample_infohashes.
+	Nodes  CompactIPv4NodeInfo `bencode:"nodes,omitempty"`
+	Nodes6 CompactIPv6NodeInfo `bencode:"nodes6,omitempty"`
+
+	Token  *string    `bencode:"token,omitempty"`  // Token for future announce_peer or put (BEP 44)
+	Values []NodeAddr `bencode:"values,omitempty"` // Torrent peers
+
+	// BEP 33 (scrapes)
 	BFsd *ScrapeBloomFilter `bencode:"BFsd,omitempty"`
 	BFpe *ScrapeBloomFilter `bencode:"BFpe,omitempty"`
+
+	Bep51Return
+
+	// BEP 44
+	Bep44Return
 }
 
 func (r Return) ForAllNodes(f func(NodeInfo)) {
@@ -65,12 +100,6 @@ func (r Return) ForAllNodes(f func(NodeInfo)) {
 	for _, n := range r.Nodes6 {
 		f(n)
 	}
-}
-
-var _ fmt.Stringer = Msg{}
-
-func (m Msg) String() string {
-	return fmt.Sprintf("%#v", m)
 }
 
 // The node ID of the source of this Msg. Returns nil if it isn't present.

@@ -1,3 +1,6 @@
+//go:build !wasm
+// +build !wasm
+
 package storage
 
 import (
@@ -7,7 +10,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/anacrolix/missinggo"
+	"github.com/anacrolix/missinggo/v2"
 	"github.com/edsrzf/mmap-go"
 
 	"github.com/anacrolix/torrent/metainfo"
@@ -19,6 +22,7 @@ type mmapClientImpl struct {
 	pc      PieceCompletion
 }
 
+// TODO: Support all the same native filepath configuration that NewFileOpts provides.
 func NewMMap(baseDir string) ClientImplCloser {
 	return NewMMapWithCompletion(baseDir, pieceCompletionForDir(baseDir))
 }
@@ -30,14 +34,14 @@ func NewMMapWithCompletion(baseDir string, completion PieceCompletion) *mmapClie
 	}
 }
 
-func (s *mmapClientImpl) OpenTorrent(info *metainfo.Info, infoHash metainfo.Hash) (t TorrentImpl, err error) {
+func (s *mmapClientImpl) OpenTorrent(info *metainfo.Info, infoHash metainfo.Hash) (_ TorrentImpl, err error) {
 	span, err := mMapTorrent(info, s.baseDir)
-	t = &mmapTorrentStorage{
+	t := &mmapTorrentStorage{
 		infoHash: infoHash,
 		span:     span,
 		pc:       s.pc,
 	}
-	return
+	return TorrentImpl{Piece: t.Piece, Close: t.Close}, err
 }
 
 func (s *mmapClientImpl) Close() error {
@@ -128,13 +132,13 @@ func mMapTorrent(md *metainfo.Info, location string) (mms *mmap_span.MMapSpan, e
 
 func mmapFile(name string, size int64) (ret mmap.MMap, err error) {
 	dir := filepath.Dir(name)
-	err = os.MkdirAll(dir, 0777)
+	err = os.MkdirAll(dir, 0o750)
 	if err != nil {
 		err = fmt.Errorf("making directory %q: %s", dir, err)
 		return
 	}
 	var file *os.File
-	file, err = os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0666)
+	file, err = os.OpenFile(name, os.O_CREATE|os.O_RDWR, 0o666)
 	if err != nil {
 		return
 	}
