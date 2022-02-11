@@ -87,8 +87,6 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 		cfg.CryptoProvides = mse.CryptoMethodRC4
 	}
 
-	cfg.DefaultRequestStrategy = torrent.RequestStrategyFastest()
-
 	// Torrent debug.
 	cfg.Debug = false
 
