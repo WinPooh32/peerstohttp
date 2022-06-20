@@ -6,7 +6,7 @@ WORKDIR ${GOPATH}/src/github.com/WinPooh32/peerstohttp/
 COPY . .
 RUN \
     cd cmd && \
-    go build -mod=vendor -o /peerstohttp
+    go build -v -mod=vendor -o /peerstohttp
 
 
 FROM alpine
