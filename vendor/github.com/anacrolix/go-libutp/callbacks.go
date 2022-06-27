@@ -4,6 +4,7 @@ package utp
 #include "utp.h"
 */
 import "C"
+
 import (
 	"log"
 	"net"
@@ -37,17 +38,13 @@ func (a *C.utp_callback_arguments) addressLen() C.socklen_t {
 	return *(*C.socklen_t)(unsafe.Pointer(&a.anon1[0]))
 }
 
-var (
-	sends         int64
-	sendToUdpAddr = net.UDPAddr{
-		IP: make(net.IP, net.IPv6len),
-	}
-)
+var sends int64
 
 //export sendtoCallback
 func sendtoCallback(a *C.utp_callback_arguments) (ret C.uint64) {
 	s := getSocketForLibContext(a.context)
 	b := a.bufBytes()
+	var sendToUdpAddr net.UDPAddr
 	if err := structSockaddrToUDPAddr(a.address(), &sendToUdpAddr); err != nil {
 		panic(err)
 	}
@@ -151,7 +148,6 @@ func acceptCallback(a *C.utp_callback_arguments) C.uint64 {
 	s := getSocketForLibContext(a.context)
 	c := s.newConn(a.socket)
 	c.setRemoteAddr()
-	c.inited = true
 	s.pushBacklog(c)
 	return 0
 }
@@ -173,9 +169,14 @@ func getReadBufferSizeCallback(a *C.utp_callback_arguments) (ret C.uint64) {
 //export firewallCallback
 func firewallCallback(a *C.utp_callback_arguments) C.uint64 {
 	s := getSocketForLibContext(a.context)
-	if s.block {
+	if s.syncFirewallCallback != nil {
+		var addr net.UDPAddr
+		structSockaddrToUDPAddr(a.address(), &addr)
+		if s.syncFirewallCallback(&addr) {
+			return 1
+		}
+	} else if s.asyncBlock {
 		return 1
-	} else {
-		return 0
 	}
+	return 0
 }

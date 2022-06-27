@@ -9,8 +9,8 @@ import (
 	"sync"
 
 	"github.com/anacrolix/torrent"
-	"github.com/boltdb/bolt"
 	"github.com/rs/zerolog/log"
+	"go.etcd.io/bbolt"
 
 	"github.com/WinPooh32/peerstohttp/settings"
 
@@ -35,7 +35,7 @@ type App struct {
 	torrents map[string]*torrent.Torrent
 	mu       sync.RWMutex
 
-	db *bolt.DB
+	db *bbolt.DB
 
 	// Path to temporary data folder.
 	tmp string
@@ -48,7 +48,7 @@ func New(service *settings.Settings) (*App, error) {
 	var cwd string
 
 	var client *torrent.Client
-	var store *bolt.DB
+	var store *bbolt.DB
 
 	// Working directory.
 	if *service.DownloadDir == "" {
@@ -59,6 +59,11 @@ func New(service *settings.Settings) (*App, error) {
 		cwd = tmp
 	} else {
 		cwd = *service.DownloadDir
+	}
+
+	err = os.MkdirAll(cwd, os.ModePerm)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create dir: %w", err)
 	}
 
 	client, err = p2p(service, cwd)
@@ -93,7 +98,7 @@ func (app *App) Load() error {
 	app.mu.Lock()
 	defer app.mu.Unlock()
 
-	return app.db.View(func(tx *bolt.Tx) error {
+	return app.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(dbBucketInfo))
 
 		return b.ForEach(func(k, v []byte) error {
@@ -124,8 +129,8 @@ func (app *App) Client() *torrent.Client {
 	return app.client
 }
 
-func (app *App) Track(t *torrent.Torrent) error {
-	return app.track(t)
+func (app *App) Track(t *torrent.Torrent) (*torrent.Torrent, error) {
+	return app.TrackContext(context.Background(), t)
 }
 
 func (app *App) TrackHash(hash metainfo.Hash) (*torrent.Torrent, error) {
@@ -134,6 +139,10 @@ func (app *App) TrackHash(hash metainfo.Hash) (*torrent.Torrent, error) {
 
 func (app *App) TrackMagnet(magnet *metainfo.Magnet) (*torrent.Torrent, error) {
 	return app.TrackMagnetContext(context.Background(), magnet)
+}
+
+func (app *App) TrackContext(ctx context.Context, t *torrent.Torrent) (*torrent.Torrent, error) {
+	return t, app.trackContext(ctx, t)
 }
 
 func (app *App) TrackHashContext(ctx context.Context, hash metainfo.Hash) (*torrent.Torrent, error) {
@@ -207,7 +216,7 @@ func (app *App) track(t *torrent.Torrent) error {
 		return fmt.Errorf("write metaInfo: %w", err)
 	}
 
-	err = app.db.Update(func(tx *bolt.Tx) error {
+	err = app.db.Update(func(tx *bbolt.Tx) error {
 		var b = tx.Bucket([]byte(dbBucketInfo))
 		return b.Put(t.InfoHash().Bytes(), buf.Bytes())
 	})
@@ -224,16 +233,16 @@ func (app *App) track(t *torrent.Torrent) error {
 
 func (app *App) trackContext(ctx context.Context, t *torrent.Torrent) error {
 
-	var err = app.track(t)
-	if err != nil {
-		return fmt.Errorf("track torrent: %w", err)
-	}
-
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
 
 	case <-t.GotInfo():
+	}
+
+	var err = app.track(t)
+	if err != nil {
+		return fmt.Errorf("track torrent: %w", err)
 	}
 
 	return nil

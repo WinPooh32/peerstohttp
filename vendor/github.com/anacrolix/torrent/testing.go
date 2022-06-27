@@ -1,20 +1,23 @@
 package torrent
 
 import (
-	"github.com/anacrolix/torrent/internal/tmproot"
+	"testing"
+	"time"
+
+	pp "github.com/anacrolix/torrent/peer_protocol"
 )
 
-var TestingTempDir tmproot.Dir
-
-func TestingConfig() *ClientConfig {
+func TestingConfig(t testing.TB) *ClientConfig {
 	cfg := NewDefaultClientConfig()
 	cfg.ListenHost = LoopbackListenHost
 	cfg.NoDHT = true
-	cfg.DataDir = TestingTempDir.NewSub()
+	cfg.DataDir = t.TempDir()
 	cfg.DisableTrackers = true
 	cfg.NoDefaultPortForwarding = true
 	cfg.DisableAcceptRateLimiting = true
 	cfg.ListenPort = 0
+	cfg.KeepAliveTimeout = time.Millisecond
+	cfg.MinPeerExtensions.SetBit(pp.ExtensionBitFast, true)
 	//cfg.Debug = true
 	//cfg.Logger = cfg.Logger.WithText(func(m log.Msg) string {
 	//	t := m.Text()

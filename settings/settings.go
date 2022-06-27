@@ -11,6 +11,7 @@ type Settings struct {
 	DownloadRate    *int
 	UploadRate      *int
 	MaxConnections  *int
+	CacheCapacity   *int64
 	NoDHT           *bool
 	NoTCP           *bool
 	NoUTP           *bool
@@ -41,6 +42,7 @@ func (s *Settings) parse() {
 		NoIPv4:          flag.Bool("no-ipv4", false, "disable IPv4"),
 		NoIPv6:          flag.Bool("no-ipv6", false, "disable IPv6"),
 		ForceEncryption: flag.Bool("force-encryption", false, "force encryption"),
+		CacheCapacity:   flag.Int64("cache-capacity", 10240, "files cache capacity in MiB\nvalue less then or equal 0 disables cache size controlling"),
 
 		// Debug
 		JsonLogs:     flag.Bool("json-logs", false, "json logs output"),
@@ -49,6 +51,9 @@ func (s *Settings) parse() {
 	}
 
 	flag.Parse()
+
+	// Convert MiB to bytes.
+	*s.CacheCapacity = *s.CacheCapacity << 20
 }
 
 var Service *Settings

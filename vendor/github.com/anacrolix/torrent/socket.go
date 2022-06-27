@@ -5,18 +5,23 @@ import (
 	"net"
 	"strconv"
 
-	"github.com/anacrolix/missinggo"
 	"github.com/anacrolix/missinggo/perf"
+	"github.com/anacrolix/missinggo/v2"
 	"github.com/pkg/errors"
 )
 
 type Listener interface {
-	net.Listener
+	// Accept waits for and returns the next connection to the listener.
+	Accept() (net.Conn, error)
+
+	// Addr returns the listener's network address.
+	Addr() net.Addr
 }
 
 type socket interface {
 	Listener
 	Dialer
+	Close() error
 }
 
 func listen(n network, addr string, f firewallCallback) (socket, error) {
@@ -34,15 +39,16 @@ func listenTcp(network, address string) (s socket, err error) {
 	l, err := net.Listen(network, address)
 	return tcpSocket{
 		Listener: l,
-		NetDialer: NetDialer{
+		NetworkDialer: NetworkDialer{
 			Network: network,
+			Dialer:  DefaultNetDialer,
 		},
 	}, err
 }
 
 type tcpSocket struct {
 	net.Listener
-	NetDialer
+	NetworkDialer
 }
 
 func listenAll(networks []network, getHost func(string) string, port int, f firewallCallback) ([]socket, error) {
@@ -94,6 +100,7 @@ func listenAllRetry(nahs []networkAndHost, port int, f firewallCallback) (ss []s
 	return
 }
 
+// This isn't aliased from go-libutp since that assumes CGO.
 type firewallCallback func(net.Addr) bool
 
 func listenUtp(network, addr string, fc firewallCallback) (socket, error) {
@@ -101,9 +108,14 @@ func listenUtp(network, addr string, fc firewallCallback) (socket, error) {
 	return utpSocketSocket{us, network}, err
 }
 
+// utpSocket wrapper, additionally wrapped for the torrent package's socket interface.
 type utpSocketSocket struct {
 	utpSocket
 	network string
+}
+
+func (me utpSocketSocket) DialerNetwork() string {
+	return me.network
 }
 
 func (me utpSocketSocket) Dial(ctx context.Context, addr string) (conn net.Conn, err error) {

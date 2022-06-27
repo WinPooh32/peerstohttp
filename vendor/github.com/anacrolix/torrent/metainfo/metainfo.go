@@ -2,6 +2,7 @@ package metainfo
 
 import (
 	"io"
+	"net/url"
 	"os"
 	"time"
 
@@ -9,15 +10,18 @@ import (
 )
 
 type MetaInfo struct {
-	InfoBytes    bencode.Bytes `bencode:"info,omitempty"`
-	Announce     string        `bencode:"announce,omitempty"`
-	AnnounceList AnnounceList  `bencode:"announce-list,omitempty"`
-	Nodes        []Node        `bencode:"nodes,omitempty"`
-	CreationDate int64         `bencode:"creation date,omitempty,ignore_unmarshal_type_error"`
-	Comment      string        `bencode:"comment,omitempty"`
-	CreatedBy    string        `bencode:"created by,omitempty"`
-	Encoding     string        `bencode:"encoding,omitempty"`
-	UrlList      UrlList       `bencode:"url-list,omitempty"`
+	InfoBytes    bencode.Bytes `bencode:"info,omitempty"`          // BEP 3
+	Announce     string        `bencode:"announce,omitempty"`      // BEP 3
+	AnnounceList AnnounceList  `bencode:"announce-list,omitempty"` // BEP 12
+	Nodes        []Node        `bencode:"nodes,omitempty"`         // BEP 5
+	// Where's this specified? Mentioned at
+	// https://wiki.theory.org/index.php/BitTorrentSpecification: (optional) the creation time of
+	// the torrent, in standard UNIX epoch format (integer, seconds since 1-Jan-1970 00:00:00 UTC)
+	CreationDate int64   `bencode:"creation date,omitempty,ignore_unmarshal_type_error"`
+	Comment      string  `bencode:"comment,omitempty"`
+	CreatedBy    string  `bencode:"created by,omitempty"`
+	Encoding     string  `bencode:"encoding,omitempty"`
+	UrlList      UrlList `bencode:"url-list,omitempty"` // BEP 19 WebSeeds
 }
 
 // Load a MetaInfo from an io.Reader. Returns a non-nil error in case of
@@ -58,19 +62,25 @@ func (mi MetaInfo) Write(w io.Writer) error {
 
 // Set good default values in preparation for creating a new MetaInfo file.
 func (mi *MetaInfo) SetDefaults() {
-	mi.Comment = "yoloham"
+	mi.Comment = ""
 	mi.CreatedBy = "github.com/anacrolix/torrent"
 	mi.CreationDate = time.Now().Unix()
 	// mi.Info.PieceLength = 256 * 1024
 }
 
-// Creates a Magnet from a MetaInfo.
-func (mi *MetaInfo) Magnet(displayName string, infoHash Hash) (m Magnet) {
-	for t := range mi.UpvertedAnnounceList().DistinctValues() {
-		m.Trackers = append(m.Trackers, t)
+// Creates a Magnet from a MetaInfo. Optional infohash and parsed info can be provided.
+func (mi *MetaInfo) Magnet(infoHash *Hash, info *Info) (m Magnet) {
+	m.Trackers = append(m.Trackers, mi.UpvertedAnnounceList().DistinctValues()...)
+	if info != nil {
+		m.DisplayName = info.Name
 	}
-	m.DisplayName = displayName
-	m.InfoHash = infoHash
+	if infoHash != nil {
+		m.InfoHash = *infoHash
+	} else {
+		m.InfoHash = mi.HashInfoBytes()
+	}
+	m.Params = make(url.Values)
+	m.Params["ws"] = mi.UrlList
 	return
 }
 

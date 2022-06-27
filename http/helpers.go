@@ -5,10 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"time"
 
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/metainfo"
+	"github.com/rs/zerolog/log"
 
 	"github.com/WinPooh32/peerstohttp/app"
 )
@@ -23,7 +25,7 @@ func addNewTorrentHash(ctx context.Context, app *app.App, hash string) (*torrent
 	}
 
 	if new {
-		app.Track(t)
+		app.TrackContext(ctx, t)
 	}
 
 	select {
@@ -46,7 +48,7 @@ func addNewTorrentMagnet(ctx context.Context, app *app.App, magnetURI string) (*
 		return nil, false
 	}
 
-	app.Track(t)
+	app.TrackContext(ctx, t)
 
 	select {
 	case <-ctx.Done():
@@ -100,20 +102,9 @@ func serveTorrentFile(w http.ResponseWriter, r *http.Request, t *torrent.Torrent
 	var file *torrent.File
 	var ok bool
 
-	// Search for file.
-	for _, f := range t.Files() {
-		var p = f.Path()
-		if p == path {
-			file = f
-			ok = true
-			break
-		}
-	}
+	log.Info().Msgf("file path = %s", path)
 
-	if !ok && path == t.Info().Name {
-		file = t.Files()[0]
-		ok = true
-	}
+	file, ok = findFile(t, path)
 
 	if !ok || file == nil {
 		return errFileNotFound
@@ -134,6 +125,30 @@ func serveTorrentFile(w http.ResponseWriter, r *http.Request, t *torrent.Torrent
 	return serveContent(w, r, file.Length(), reader, name)
 }
 
+func findFile(t *torrent.Torrent, path string) (*torrent.File, bool) {
+	var file *torrent.File
+
+	if !t.Info().IsDir() {
+		if filepath.Base(path) != t.Info().Name {
+			return nil, false
+		}
+		file = t.Files()[0]
+	} else {
+		for _, f := range t.Files() {
+			var p = f.Path()
+			if p == path {
+				file = f
+				break
+			}
+		}
+		if file == nil {
+			return nil, false
+		}
+	}
+
+	return file, true
+}
+
 func serveContent(w http.ResponseWriter, r *http.Request, size int64, reader torrent.Reader, name string) error {
 	var err error
 
@@ -152,6 +167,6 @@ func serveContent(w http.ResponseWriter, r *http.Request, size int64, reader tor
 		return err
 	}
 
-	http.ServeContent(w, r, "", time.Unix(0, 0), reader)
+	http.ServeContent(w, r, "", time.Now(), reader)
 	return nil
 }

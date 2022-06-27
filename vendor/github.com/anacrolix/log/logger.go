@@ -30,7 +30,7 @@ func (l Logger) WithValues(v ...interface{}) Logger {
 }
 
 // Returns a new logger that suppresses further propagation for messages if `f` returns false.
-func (l Logger) WithFilter(f func(Msg) bool) Logger {
+func (l Logger) WithFilter(f func(m Msg) bool) Logger {
 	return Logger{LoggerFunc(func(m Msg) {
 		if f(m) {
 			l.Log(m)
@@ -39,7 +39,7 @@ func (l Logger) WithFilter(f func(Msg) bool) Logger {
 }
 
 // Returns a logger that for a given message propagates the result of `f` instead.
-func (l Logger) WithMap(f func(Msg) Msg) Logger {
+func (l Logger) WithMap(f func(m Msg) Msg) Logger {
 	return Logger{LoggerFunc(func(m Msg) {
 		l.Log(f(m))
 	})}
@@ -71,9 +71,37 @@ func (l Logger) WithDefaultLevel(level Level) Logger {
 	})
 }
 
+func (l Logger) WithLevel(level Level) Logger {
+	return l.WithMap(func(m Msg) Msg {
+		return m.SetLevel(level)
+	})
+}
+
 func (l Logger) FilterLevel(minLevel Level) Logger {
 	return l.WithFilter(func(m Msg) bool {
 		level, ok := m.GetLevel()
 		return !ok || !level.LessThan(minLevel)
+	})
+}
+
+func (l Logger) WithContextValue(v interface{}) Logger {
+	return l.WithText(func(m Msg) string {
+		return fmt.Sprintf("%v: %v", v, m)
+	})
+}
+
+func (l Logger) WithContextText(s string) Logger {
+	return l.WithText(func(m Msg) string {
+		return s + ": " + m.Text()
+	})
+}
+
+func (l Logger) IsZero() bool {
+	return l == Logger{}
+}
+
+func (l Logger) SkipCallers(skip int) Logger {
+	return l.WithMap(func(m Msg) Msg {
+		return m.Skip(skip)
 	})
 }

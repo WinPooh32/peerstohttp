@@ -7,9 +7,12 @@ import (
 	"time"
 
 	anacrolixlog "github.com/anacrolix/log"
+	"github.com/anacrolix/missinggo/v2/filecache"
+	"github.com/anacrolix/missinggo/v2/resource"
 	"github.com/anacrolix/torrent"
 	"github.com/anacrolix/torrent/mse"
-	"github.com/boltdb/bolt"
+	"github.com/anacrolix/torrent/storage"
+	"go.etcd.io/bbolt"
 	"golang.org/x/time/rate"
 
 	"github.com/WinPooh32/peerstohttp/settings"
@@ -84,8 +87,6 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 		cfg.CryptoProvides = mse.CryptoMethodRC4
 	}
 
-	cfg.DefaultRequestStrategy = torrent.RequestStrategyFastest()
-
 	// Torrent debug.
 	cfg.Debug = false
 
@@ -93,19 +94,37 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 		cfg.Logger = anacrolixlog.Discard
 	}
 
+	// File cache.
+	var err error
+	var res resource.Provider
+	var capacity int64
+
+	if *service.CacheCapacity > 0 {
+		capacity = *service.CacheCapacity
+		res, err = makeResourceProvider(cwd, capacity)
+		if err != nil {
+			return nil, fmt.Errorf("make resource provider: %w", err)
+		}
+
+		cfg.DefaultStorage = makeStorageProvider(res)
+	} else {
+		cfg.DefaultStorage = storage.NewFile(cwd)
+	}
+
 	return torrent.NewClient(cfg)
 }
 
-func db(path string) (*bolt.DB, error) {
-	var db, err = bolt.Open(path, 0600, &bolt.Options{
+func db(path string) (*bbolt.DB, error) {
+	var db, err = bbolt.Open(path, 0600, &bbolt.Options{
 		Timeout: 5 * time.Second,
+		NoSync:  false,
 	})
 	if err != nil {
 		return nil, err
 	}
 
 	// Create buckets.
-	err = db.Update(func(tx *bolt.Tx) error {
+	err = db.Update(func(tx *bbolt.Tx) error {
 		var _, err = tx.CreateBucketIfNotExists([]byte(dbBucketInfo))
 		if err != nil {
 			return fmt.Errorf("create bucket: %w", err)
@@ -117,4 +136,22 @@ func db(path string) (*bolt.DB, error) {
 	}
 
 	return db, nil
+}
+
+func makeResourceProvider(dir string, capacity int64) (resource.Provider, error) {
+	var err error
+	var fc *filecache.Cache
+
+	fc, err = filecache.NewCache(dir)
+	if err != nil {
+		return nil, fmt.Errorf("new file cache: %w", err)
+	}
+
+	fc.SetCapacity(capacity)
+
+	return fc.AsResourceProvider(), nil
+}
+
+func makeStorageProvider(res resource.Provider) storage.ClientImpl {
+	return storage.NewResourcePieces(res)
 }

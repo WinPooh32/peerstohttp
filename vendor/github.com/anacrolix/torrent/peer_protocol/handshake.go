@@ -2,12 +2,10 @@ package peer_protocol
 
 import (
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
-
-	"golang.org/x/xerrors"
-
-	"github.com/anacrolix/missinggo"
+	"strconv"
 
 	"github.com/anacrolix/torrent/metainfo"
 )
@@ -35,13 +33,13 @@ type (
 	PeerExtensionBits [8]byte
 )
 
-func (me PeerExtensionBits) String() string {
-	return hex.EncodeToString(me[:])
+func (pex PeerExtensionBits) String() string {
+	return hex.EncodeToString(pex[:])
 }
 
 func NewPeerExtensionBytes(bits ...ExtensionBit) (ret PeerExtensionBits) {
 	for _, b := range bits {
-		ret.SetBit(b)
+		ret.SetBit(b, true)
 	}
 	return
 }
@@ -58,8 +56,12 @@ func (pex PeerExtensionBits) SupportsFast() bool {
 	return pex.GetBit(ExtensionBitFast)
 }
 
-func (pex *PeerExtensionBits) SetBit(bit ExtensionBit) {
-	pex[7-bit/8] |= 1 << (bit % 8)
+func (pex *PeerExtensionBits) SetBit(bit ExtensionBit, on bool) {
+	if on {
+		pex[7-bit/8] |= 1 << (bit % 8)
+	} else {
+		pex[7-bit/8] &^= 1 << (bit % 8)
+	}
 }
 
 func (pex PeerExtensionBits) GetBit(bit ExtensionBit) bool {
@@ -95,7 +97,7 @@ func Handshake(
 		// Wait until writes complete before returning from handshake.
 		err = <-writeDone
 		if err != nil {
-			err = fmt.Errorf("error writing: %s", err)
+			err = fmt.Errorf("error writing: %w", err)
 		}
 	}()
 
@@ -116,16 +118,21 @@ func Handshake(
 	var b [68]byte
 	_, err = io.ReadFull(sock, b[:68])
 	if err != nil {
-		err = xerrors.Errorf("while reading: %w", err)
-		return
+		return res, fmt.Errorf("while reading: %w", err)
 	}
 	if string(b[:20]) != Protocol {
-		err = xerrors.Errorf("unexpected protocol string")
-		return
+		return res, errors.New("unexpected protocol string")
 	}
-	missinggo.CopyExact(&res.PeerExtensionBits, b[20:28])
-	missinggo.CopyExact(&res.Hash, b[28:48])
-	missinggo.CopyExact(&res.PeerID, b[48:68])
+
+	copyExact := func(dst, src []byte) {
+		if dstLen, srcLen := uint64(len(dst)), uint64(len(src)); dstLen != srcLen {
+			panic("dst len " + strconv.FormatUint(dstLen, 10) + " != src len " + strconv.FormatUint(srcLen, 10))
+		}
+		copy(dst, src)
+	}
+	copyExact(res.PeerExtensionBits[:], b[20:28])
+	copyExact(res.Hash[:], b[28:48])
+	copyExact(res.PeerID[:], b[48:68])
 	// peerExtensions.Add(res.PeerExtensionBits.String(), 1)
 
 	// TODO: Maybe we can just drop peers here if we're not interested. This
