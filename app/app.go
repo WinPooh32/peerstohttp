@@ -159,13 +159,8 @@ func (app *App) TrackMagnetContext(ctx context.Context, magnet *metainfo.Magnet)
 	var err error
 	var t *torrent.Torrent
 
-	var spec = &torrent.TorrentSpec{
-		Trackers:    [][]string{magnet.Trackers},
-		DisplayName: magnet.DisplayName,
-		InfoHash:    magnet.InfoHash,
-	}
 
-	t, _, err = app.client.AddTorrentSpec(spec)
+	t, err = app.client.AddMagnet(magnet.String())
 	if err != nil {
 		return nil, fmt.Errorf("torrent add magnet: %w", err)
 	}
