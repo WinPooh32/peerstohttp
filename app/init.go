@@ -88,7 +88,7 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 	}
 
 	// Torrent debug.
-	cfg.Debug = false
+	cfg.Debug = *service.TorrentDebug
 
 	if !*service.TorrentDebug {
 		cfg.Logger = anacrolixlog.Discard
