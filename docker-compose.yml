@@ -2,18 +2,30 @@ version: "2.4"
 services:
   peerstohttp: 
     container_name: peerstohttp
-    restart: unless-stopped
-    build: .
+    # Build image from local source (for development):
+    # build: .
+    # Build image by pulling Github's remote repo (test any branch):
+    # build: github.com/WinPooh32/peerstohttp#master
+    # Pull public image from Docker Hub:
+    image: WinPooh32/peerstohttp
     command:
       - "-port"
       - "80"
-#      - "-port-torr"
-#      - "6881"
-#      - "-no-tcp"
-#      - "-no-dht"
-#      - "-no-ipv6"
-#      - "-profile"
-#      - "-torr-debug"
+      # - "-port-torr"
+      # - "6881"
+      # - "-no-dht"
+      # - "-no-ipv4"
+      # - "-no-ipv6"
+      # - "-no-tcp"
+      # - "-no-udp"
+      # - "-profile"
+      # - "-torr-debug"
+    restart: unless-stopped
+
+    # Networking: either use the 'host' mode, sharing the host's network stack
+    # or expose the service's ports as needed.
     network_mode: host
-#    ports:
-#      - "80:80"
+    # ports:
+    #   - "80:80"
+    #   - "6881:6881/udp"
+    #   - "6881:6881/tcp"
