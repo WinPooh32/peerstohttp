@@ -65,6 +65,8 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 	cfg.DisableIPv4 = *service.NoIPv4
 	cfg.DisableIPv6 = *service.NoIPv6
 
+	cfg.NoDefaultPortForwarding = *service.NoUPnP
+
 	if *service.ProxyHTTP != "" {
 		var u, err = url.Parse(*service.ProxyHTTP)
 		if err != nil {
