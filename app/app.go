@@ -84,10 +84,15 @@ func New(service *settings.Settings) (*App, error) {
 		cwd:      cwd,
 	}
 
-	err = app.Load()
-	if err != nil {
-		return nil, fmt.Errorf("load app state from db: %w", err)
-	}
+	go func() {
+		err = app.Load()
+		if err != nil {
+			log.Error().
+				Err(err).
+				Msg("load app state from db")
+			return
+		}
+	}()
 
 	log.Info().Msg("app loaded")
 
@@ -95,13 +100,10 @@ func New(service *settings.Settings) (*App, error) {
 }
 
 func (app *App) Load() error {
-	app.mu.Lock()
-	defer app.mu.Unlock()
-
 	return app.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(dbBucketInfo))
 
-		return b.ForEach(func(k, v []byte) error {
+		return b.ForEach(func(_, v []byte) error {
 			var err error
 			var mi *metainfo.MetaInfo
 			var t *torrent.Torrent
@@ -118,7 +120,9 @@ func (app *App) Load() error {
 				return nil
 			}
 
+			app.mu.Lock()
 			app.torrents[t.InfoHash().String()] = t
+			app.mu.Unlock()
 
 			return nil
 		})
@@ -158,7 +162,6 @@ func (app *App) TrackHashContext(ctx context.Context, hash metainfo.Hash) (*torr
 func (app *App) TrackMagnetContext(ctx context.Context, magnet *metainfo.Magnet) (*torrent.Torrent, error) {
 	var err error
 	var t *torrent.Torrent
-
 
 	t, err = app.client.AddMagnet(magnet.String())
 	if err != nil {
