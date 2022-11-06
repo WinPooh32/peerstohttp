@@ -85,7 +85,7 @@ func New(service *settings.Settings) (*App, error) {
 	}
 
 	go func() {
-		err = app.Load()
+		err = app.load()
 		if err != nil {
 			log.Error().
 				Err(err).
@@ -99,7 +99,9 @@ func New(service *settings.Settings) (*App, error) {
 	return app, nil
 }
 
-func (app *App) Load() error {
+func (app *App) load() error {
+	sema := make(chan struct{}, 32)
+
 	return app.db.View(func(tx *bbolt.Tx) error {
 		b := tx.Bucket([]byte(dbBucketInfo))
 
@@ -114,15 +116,20 @@ func (app *App) Load() error {
 				return nil
 			}
 
-			t, err = app.client.AddTorrent(mi)
-			if err != nil {
-				log.Warn().Msgf("add torrent: %s", err)
-				return nil
-			}
+			sema <- struct{}{}
 
-			app.mu.Lock()
-			app.torrents[t.InfoHash().String()] = t
-			app.mu.Unlock()
+			go func() {
+				defer func() { <-sema }()
+
+				t, err = app.client.AddTorrent(mi)
+				if err != nil {
+					log.Warn().Msgf("add torrent: %s", err)
+				}
+
+				app.mu.Lock()
+				app.torrents[t.InfoHash().String()] = t
+				app.mu.Unlock()
+			}()
 
 			return nil
 		})
