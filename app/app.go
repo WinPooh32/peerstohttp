@@ -126,6 +126,8 @@ func (app *App) load() error {
 					log.Warn().Msgf("add torrent: %s", err)
 				}
 
+				t.AddTrackers(trackers)
+
 				app.mu.Lock()
 				app.torrents[t.InfoHash().String()] = t
 				app.mu.Unlock()
@@ -174,6 +176,8 @@ func (app *App) TrackMagnetContext(ctx context.Context, magnet *metainfo.Magnet)
 	if err != nil {
 		return nil, fmt.Errorf("torrent add magnet: %w", err)
 	}
+
+	t.AddTrackers(trackers)
 
 	return t, app.trackContext(ctx, t)
 }
