@@ -167,6 +167,6 @@ func serveContent(w http.ResponseWriter, r *http.Request, size int64, reader tor
 		return err
 	}
 
-	http.ServeContent(w, r, "", time.Now(), reader)
+	http.ServeContent(w, r, name, time.Now(), reader)
 	return nil
 }
