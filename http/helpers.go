@@ -153,7 +153,7 @@ func serveContent(w http.ResponseWriter, r *http.Request, size int64, reader tor
 	var err error
 
 	// Don't wait for pieces to complete and be verified.
-	//reader.SetResponsive()
+	reader.SetResponsive()
 
 	if size > 0 {
 		// Read ahead 10% of file.
