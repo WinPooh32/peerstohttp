@@ -27,18 +27,9 @@ func hash(next http.Handler) http.Handler {
 
 func magnet(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var parts = strings.Split(r.URL.RawQuery, "&")
+		var magnetURI = chi.URLParam(r, "*") + "?" + r.URL.RawQuery
 
-		if len(parts) == 0 {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			return
-		}
-
-		parts[0] = strings.ToLower(parts[0])
-
-		var magnetURI = chi.URLParam(r, "*") + "?" + strings.Join(parts, "&")
 		var magnet, err = metainfo.ParseMagnetUri(magnetURI)
-
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
 			return
