@@ -31,7 +31,7 @@ func magnet(next http.Handler) http.Handler {
 
 		var magnet, err = metainfo.ParseMagnetUri(magnetURI)
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
@@ -45,12 +45,12 @@ func path(next http.Handler) http.Handler {
 		var path, err = url.QueryUnescape(chi.URLParam(r, "*"))
 
 		if err != nil {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
 		if !govalidator.IsRequestURI("/" + path) {
-			http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
+			http.Error(w, "malformed url", http.StatusBadRequest)
 			return
 		}
 
