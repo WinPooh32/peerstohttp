@@ -4,83 +4,53 @@ import (
 	"fmt"
 )
 
-// LoggerImpl is the minimal interface for Logger.
-type LoggerImpl interface {
-	Log(Msg)
+// Returns a new Logger with the names given, and Default's handlers. I'm not sure copying those
+// handlers is the right choice yet, but it's better than having your messages vanish if you forget
+// to configure them.
+func NewLogger(names ...string) Logger {
+	return Logger{
+		loggerCore{
+			nonZero:  true,
+			names:    names,
+			Handlers: Default.Handlers,
+		},
+	}
 }
 
-// LoggerFunc is a helper type that implements LoggerImpl from just a logging function.
-type LoggerFunc func(Msg)
-
-func (me LoggerFunc) Log(m Msg) {
-	// Skip 1 for this function, and 1 for me.
-	me(m.Skip(2))
-}
-
-// Logger is a helper wrapping LoggerImpl.
+// Logger handles logging in a specific context. It includes a bunch of helpers and compatibility
+// over the loggerCore.
 type Logger struct {
-	LoggerImpl
-}
-
-// Returns a logger that adds the given values to logged messages.
-func (l Logger) WithValues(v ...interface{}) Logger {
-	return Logger{LoggerFunc(func(m Msg) {
-		l.Log(m.WithValues(v...))
-	})}
-}
-
-// Returns a new logger that suppresses further propagation for messages if `f` returns false.
-func (l Logger) WithFilter(f func(m Msg) bool) Logger {
-	return Logger{LoggerFunc(func(m Msg) {
-		if f(m) {
-			l.Log(m)
-		}
-	})}
-}
-
-// Returns a logger that for a given message propagates the result of `f` instead.
-func (l Logger) WithMap(f func(m Msg) Msg) Logger {
-	return Logger{LoggerFunc(func(m Msg) {
-		l.Log(f(m))
-	})}
+	loggerCore
 }
 
 func (l Logger) WithText(f func(Msg) string) Logger {
-	return Logger{LoggerFunc(func(m Msg) {
-		l.Log(m.WithText(f))
-	})}
+	l.msgMaps = append(l.msgMaps, func(msg Msg) Msg {
+		return msg.WithText(f)
+	})
+	return l
 }
 
 // Helper for compatibility with "log".Logger.
 func (l Logger) Printf(format string, a ...interface{}) {
-	l.Log(Fmsg(format, a...).Skip(1))
+	l.LazyLog(l.defaultLevel, func() Msg {
+		return Fmsg(format, a...).Skip(1)
+	})
+}
+
+func (l Logger) Log(m Msg) {
+	l.LogLevel(l.defaultLevel, m.Skip(1))
+}
+
+func (l Logger) LogLevel(level Level, m Msg) {
+	l.LazyLog(level, func() Msg {
+		return m.Skip(1)
+	})
 }
 
 // Helper for compatibility with "log".Logger.
 func (l Logger) Print(v ...interface{}) {
-	l.Log(Str(fmt.Sprint(v...)).Skip(1))
-}
-
-func (l Logger) WithDefaultLevel(level Level) Logger {
-	return l.WithMap(func(m Msg) Msg {
-		_, ok := m.GetLevel()
-		if !ok {
-			m = m.SetLevel(level)
-		}
-		return m
-	})
-}
-
-func (l Logger) WithLevel(level Level) Logger {
-	return l.WithMap(func(m Msg) Msg {
-		return m.SetLevel(level)
-	})
-}
-
-func (l Logger) FilterLevel(minLevel Level) Logger {
-	return l.WithFilter(func(m Msg) bool {
-		level, ok := m.GetLevel()
-		return !ok || !level.LessThan(minLevel)
+	l.LazyLog(l.defaultLevel, func() Msg {
+		return Str(fmt.Sprint(v...)).Skip(1)
 	})
 }
 
@@ -96,12 +66,27 @@ func (l Logger) WithContextText(s string) Logger {
 	})
 }
 
-func (l Logger) IsZero() bool {
-	return l == Logger{}
-}
-
 func (l Logger) SkipCallers(skip int) Logger {
 	return l.WithMap(func(m Msg) Msg {
 		return m.Skip(skip)
+	})
+}
+
+func (l Logger) Levelf(level Level, format string, a ...interface{}) {
+	l.LazyLog(level, func() Msg {
+		return Fmsg(format, a...).Skip(1)
+	})
+}
+
+// Efficiently print arguments at the given level.
+func (l Logger) LevelPrint(level Level, a ...interface{}) {
+	l.LazyLog(level, func() Msg {
+		return Str(fmt.Sprint(a...)).Skip(1)
+	})
+}
+
+func (l Logger) Println(a ...interface{}) {
+	l.LazyLogDefaultLevel(func() Msg {
+		return Str(fmt.Sprintln(a...)).Skip(1)
 	})
 }

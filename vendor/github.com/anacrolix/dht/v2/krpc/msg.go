@@ -1,5 +1,9 @@
 package krpc
 
+import (
+	"github.com/anacrolix/torrent/bencode"
+)
+
 // Msg represents messages that nodes in the network send to each other as specified by the protocol.
 // They are also referred to as the KRPC messages.
 // There are three types of messages: QUERY, RESPONSE, ERROR
@@ -65,10 +69,10 @@ type Bep51Return struct {
 }
 
 type Bep44Return struct {
-	V   interface{} `bencode:"v,omitempty"`
-	K   [32]byte    `bencode:"k,omitempty"`
-	Sig [64]byte    `bencode:"sig,omitempty"`
-	Seq *int64      `bencode:"seq,omitempty"`
+	V   bencode.Bytes `bencode:"v,omitempty"`
+	K   [32]byte      `bencode:"k,omitempty"`
+	Sig [64]byte      `bencode:"sig,omitempty"`
+	Seq *int64        `bencode:"seq,omitempty"`
 }
 
 type Return struct {
@@ -121,6 +125,8 @@ func (m Msg) SenderID() *ID {
 	return nil
 }
 
+// This does not return an error, but (*Error)(nil) is still a non-nil error. You have been warned!
+// This language is evil.
 func (m Msg) Error() *Error {
 	if m.Y != "e" {
 		return nil

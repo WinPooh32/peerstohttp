@@ -93,7 +93,10 @@ func p2p(service *settings.Settings, cwd string) (*torrent.Client, error) {
 	cfg.Debug = *service.TorrentDebug
 
 	if !*service.TorrentDebug {
-		cfg.Logger = anacrolixlog.Discard
+		logger := anacrolixlog.Default
+		logger.SetHandlers(anacrolixlog.DiscardHandler)
+
+		cfg.Logger = logger
 	}
 
 	// File cache.

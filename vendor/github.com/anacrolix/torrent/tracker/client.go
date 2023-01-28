@@ -2,7 +2,10 @@ package tracker
 
 import (
 	"context"
+	"net"
 	"net/url"
+
+	"github.com/anacrolix/log"
 
 	trHttp "github.com/anacrolix/torrent/tracker/http"
 	"github.com/anacrolix/torrent/tracker/udp"
@@ -18,7 +21,9 @@ type AnnounceOpt = trHttp.AnnounceOpt
 type NewClientOpts struct {
 	Http trHttp.NewClientOpts
 	// Overrides the network in the scheme. Probably a legacy thing.
-	UdpNetwork string
+	UdpNetwork   string
+	Logger       log.Logger
+	ListenPacket func(network, addr string) (net.PacketConn, error)
 }
 
 func NewClient(urlStr string, opts NewClientOpts) (Client, error) {
@@ -35,8 +40,10 @@ func NewClient(urlStr string, opts NewClientOpts) (Client, error) {
 			network = opts.UdpNetwork
 		}
 		cc, err := udp.NewConnClient(udp.NewConnClientOpts{
-			Network: network,
-			Host:    _url.Host,
+			Network:      network,
+			Host:         _url.Host,
+			Logger:       opts.Logger,
+			ListenPacket: opts.ListenPacket,
 		})
 		if err != nil {
 			return nil, err

@@ -5,15 +5,14 @@ import (
 	"expvar"
 
 	"github.com/anacrolix/multiless"
-	"github.com/anacrolix/torrent/metainfo"
-	"github.com/google/btree"
 
+	"github.com/anacrolix/torrent/metainfo"
 	"github.com/anacrolix/torrent/types"
 )
 
 type (
-	RequestIndex  = uint32
-	ChunkIndex    = uint32
+	RequestIndex  uint32
+	ChunkIndex    = RequestIndex
 	Request       = types.Request
 	pieceIndex    = types.PieceIndex
 	piecePriority = types.PiecePriority
@@ -44,7 +43,10 @@ func pieceOrderLess(i, j *pieceRequestOrderItem) multiless.Computation {
 var packageExpvarMap = expvar.NewMap("request-strategy")
 
 // Calls f with requestable pieces in order.
-func GetRequestablePieces(input Input, pro *PieceRequestOrder, f func(ih metainfo.Hash, pieceIndex int)) {
+func GetRequestablePieces(
+	input Input, pro *PieceRequestOrder,
+	f func(ih metainfo.Hash, pieceIndex int, orderState PieceRequestOrderState),
+) {
 	// Storage capacity left for this run, keyed by the storage capacity pointer on the storage
 	// TorrentImpl. A nil value means no capacity limit.
 	var storageLeft *int64
@@ -52,11 +54,9 @@ func GetRequestablePieces(input Input, pro *PieceRequestOrder, f func(ih metainf
 		storageLeft = &cap
 	}
 	var allTorrentsUnverifiedBytes int64
-	pro.tree.Ascend(func(i btree.Item) bool {
-		_i := i.(*pieceRequestOrderItem)
+	pro.tree.Scan(func(_i pieceRequestOrderItem) bool {
 		ih := _i.key.InfoHash
-		var t Torrent = input.Torrent(ih)
-		var piece Piece = t.Piece(_i.key.Index)
+		var t = input.Torrent(ih)
 		pieceLength := t.PieceLength()
 		if storageLeft != nil {
 			if *storageLeft < pieceLength {
@@ -64,7 +64,7 @@ func GetRequestablePieces(input Input, pro *PieceRequestOrder, f func(ih metainf
 			}
 			*storageLeft -= pieceLength
 		}
-		if !piece.Request() || piece.NumPendingChunks() == 0 {
+		if t.IgnorePiece(_i.key.Index) {
 			// TODO: Clarify exactly what is verified. Stuff that's being hashed should be
 			// considered unverified and hold up further requests.
 			return true
@@ -73,7 +73,7 @@ func GetRequestablePieces(input Input, pro *PieceRequestOrder, f func(ih metainf
 			return true
 		}
 		allTorrentsUnverifiedBytes += pieceLength
-		f(ih, _i.key.Index)
+		f(ih, _i.key.Index, _i.state)
 		return true
 	})
 	return

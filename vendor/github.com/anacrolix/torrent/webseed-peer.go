@@ -10,16 +10,18 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/anacrolix/log"
+
 	"github.com/anacrolix/torrent/metainfo"
 	pp "github.com/anacrolix/torrent/peer_protocol"
 	"github.com/anacrolix/torrent/webseed"
 )
 
 type webseedPeer struct {
+	// First field for stats alignment.
+	peer           Peer
 	client         webseed.Client
 	activeRequests map[Request]webseed.Request
 	requesterCond  sync.Cond
-	peer           Peer
 	// Number of requester routines.
 	maxRequests int
 }
@@ -85,7 +87,7 @@ func (ws *webseedPeer) requester(i int) {
 start:
 	for !ws.peer.closed.IsSet() {
 		restart := false
-		ws.peer.requestState.Requests.Iterate(func(x uint32) bool {
+		ws.peer.requestState.Requests.Iterate(func(x RequestIndex) bool {
 			r := ws.peer.t.requestIndexToRequest(x)
 			if _, ok := ws.activeRequests[r]; ok {
 				return true
@@ -113,9 +115,12 @@ func (ws *webseedPeer) connectionFlags() string {
 	return "WS"
 }
 
-// TODO: This is called when banning peers. Perhaps we want to be able to ban webseeds too. We could
-// return bool if this is even possible, and if it isn't, skip to the next drop candidate.
+// Maybe this should drop all existing connections, or something like that.
 func (ws *webseedPeer) drop() {}
+
+func (cn *webseedPeer) ban() {
+	cn.peer.close()
+}
 
 func (ws *webseedPeer) handleUpdateRequests() {
 	// Because this is synchronous, webseed peers seem to get first dibs on newly prioritized
@@ -128,7 +133,7 @@ func (ws *webseedPeer) handleUpdateRequests() {
 }
 
 func (ws *webseedPeer) onClose() {
-	ws.peer.logger.WithLevel(log.Debug).Print("closing")
+	ws.peer.logger.Levelf(log.Debug, "closing")
 	// Just deleting them means we would have to manually cancel active requests.
 	ws.peer.cancelAllRequests()
 	ws.peer.t.iterPeers(func(p *Peer) {

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/anacrolix/chansync/events"
-	"github.com/anacrolix/missinggo/pubsub"
+	"github.com/anacrolix/missinggo/v2/pubsub"
 	"github.com/anacrolix/sync"
 
 	"github.com/anacrolix/torrent/metainfo"
@@ -32,7 +32,7 @@ func (t *Torrent) Info() (info *metainfo.Info) {
 // Returns a Reader bound to the torrent's data. All read calls block until the data requested is
 // actually available. Note that you probably want to ensure the Torrent Info is available first.
 func (t *Torrent) NewReader() Reader {
-	return t.newReader(0, *t.length)
+	return t.newReader(0, t.length())
 }
 
 func (t *Torrent) newReader(offset, length int64) Reader {
@@ -86,8 +86,8 @@ func (t *Torrent) NumPieces() pieceIndex {
 
 // Get missing bytes count for specific piece.
 func (t *Torrent) PieceBytesMissing(piece int) int64 {
-	t.cl.lock()
-	defer t.cl.unlock()
+	t.cl.rLock()
+	defer t.cl.rUnlock()
 
 	return int64(t.pieces[piece].bytesLeft())
 }
@@ -115,16 +115,16 @@ func (t *Torrent) BytesCompleted() int64 {
 
 // The subscription emits as (int) the index of pieces as their state changes.
 // A state change is when the PieceState for a piece alters in value.
-func (t *Torrent) SubscribePieceStateChanges() *pubsub.Subscription {
+func (t *Torrent) SubscribePieceStateChanges() *pubsub.Subscription[PieceStateChange] {
 	return t.pieceStateChanges.Subscribe()
 }
 
 // Returns true if the torrent is currently being seeded. This occurs when the
 // client is willing to upload without wanting anything in return.
 func (t *Torrent) Seeding() (ret bool) {
-	t.cl.lock()
+	t.cl.rLock()
 	ret = t.seeding()
-	t.cl.unlock()
+	t.cl.rUnlock()
 	return
 }
 
@@ -147,14 +147,14 @@ func (t *Torrent) Name() string {
 // The completed length of all the torrent data, in all its files. This is
 // derived from the torrent info, when it is available.
 func (t *Torrent) Length() int64 {
-	return *t.length
+	return t._length.Value
 }
 
 // Returns a run-time generated metainfo for the torrent that includes the
 // info bytes and announce-list as currently known to the client.
 func (t *Torrent) Metainfo() metainfo.MetaInfo {
-	t.cl.lock()
-	defer t.cl.unlock()
+	t.cl.rLock()
+	defer t.cl.rUnlock()
 	return t.newMetaInfo()
 }
 
@@ -211,23 +211,13 @@ func (t *Torrent) initFiles() {
 	var offset int64
 	t.files = new([]*File)
 	for _, fi := range t.info.UpvertedFiles() {
-		var path []string
-		if len(fi.PathUTF8) != 0 {
-			path = fi.PathUTF8
-		} else {
-			path = fi.Path
-		}
-		dp := t.info.Name
-		if len(fi.Path) != 0 {
-			dp = strings.Join(fi.Path, "/")
-		}
 		*t.files = append(*t.files, &File{
 			t,
-			strings.Join(append([]string{t.info.Name}, path...), "/"),
+			strings.Join(append([]string{t.info.BestName()}, fi.BestPath()...), "/"),
 			offset,
 			fi.Length,
 			fi,
-			dp,
+			fi.DisplayPath(t.info),
 			PiecePriorityNone,
 		})
 		offset += fi.Length

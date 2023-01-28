@@ -1,3 +1,4 @@
+//go:build !js
 // +build !js
 
 package webrtc
@@ -24,20 +25,33 @@ type trackBinding struct {
 // TrackLocalStaticRTP  is a TrackLocal that has a pre-set codec and accepts RTP Packets.
 // If you wish to send a media.Sample use TrackLocalStaticSample
 type TrackLocalStaticRTP struct {
-	mu           sync.RWMutex
-	bindings     []trackBinding
-	codec        RTPCodecCapability
-	id, streamID string
+	mu                sync.RWMutex
+	bindings          []trackBinding
+	codec             RTPCodecCapability
+	id, rid, streamID string
 }
 
 // NewTrackLocalStaticRTP returns a TrackLocalStaticRTP.
-func NewTrackLocalStaticRTP(c RTPCodecCapability, id, streamID string) (*TrackLocalStaticRTP, error) {
-	return &TrackLocalStaticRTP{
+func NewTrackLocalStaticRTP(c RTPCodecCapability, id, streamID string, options ...func(*TrackLocalStaticRTP)) (*TrackLocalStaticRTP, error) {
+	t := &TrackLocalStaticRTP{
 		codec:    c,
 		bindings: []trackBinding{},
 		id:       id,
 		streamID: streamID,
-	}, nil
+	}
+
+	for _, option := range options {
+		option(t)
+	}
+
+	return t, nil
+}
+
+// WithRTPStreamID sets the RTP stream ID for this TrackLocalStaticRTP.
+func WithRTPStreamID(rid string) func(*TrackLocalStaticRTP) {
+	return func(t *TrackLocalStaticRTP) {
+		t.rid = rid
+	}
 }
 
 // Bind is called by the PeerConnection after negotiation is complete
@@ -86,6 +100,9 @@ func (s *TrackLocalStaticRTP) ID() string { return s.id }
 // StreamID is the group this track belongs too. This must be unique
 func (s *TrackLocalStaticRTP) StreamID() string { return s.streamID }
 
+// RID is the RTP stream identifier.
+func (s *TrackLocalStaticRTP) RID() string { return s.rid }
+
 // Kind controls if this TrackLocal is audio or video
 func (s *TrackLocalStaticRTP) Kind() RTPCodecType {
 	switch {
@@ -117,7 +134,7 @@ var rtpPacketPool = sync.Pool{
 // PeerConnections so you can remove them
 func (s *TrackLocalStaticRTP) WriteRTP(p *rtp.Packet) error {
 	ipacket := rtpPacketPool.Get()
-	packet := ipacket.(*rtp.Packet)
+	packet := ipacket.(*rtp.Packet) //nolint:forcetypeassert
 	defer func() {
 		*packet = rtp.Packet{}
 		rtpPacketPool.Put(ipacket)
@@ -150,7 +167,7 @@ func (s *TrackLocalStaticRTP) writeRTP(p *rtp.Packet) error {
 // PeerConnections so you can remove them
 func (s *TrackLocalStaticRTP) Write(b []byte) (n int, err error) {
 	ipacket := rtpPacketPool.Get()
-	packet := ipacket.(*rtp.Packet)
+	packet := ipacket.(*rtp.Packet) //nolint:forcetypeassert
 	defer func() {
 		*packet = rtp.Packet{}
 		rtpPacketPool.Put(ipacket)
@@ -173,8 +190,8 @@ type TrackLocalStaticSample struct {
 }
 
 // NewTrackLocalStaticSample returns a TrackLocalStaticSample
-func NewTrackLocalStaticSample(c RTPCodecCapability, id, streamID string) (*TrackLocalStaticSample, error) {
-	rtpTrack, err := NewTrackLocalStaticRTP(c, id, streamID)
+func NewTrackLocalStaticSample(c RTPCodecCapability, id, streamID string, options ...func(*TrackLocalStaticRTP)) (*TrackLocalStaticSample, error) {
+	rtpTrack, err := NewTrackLocalStaticRTP(c, id, streamID, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -191,6 +208,9 @@ func (s *TrackLocalStaticSample) ID() string { return s.rtpTrack.ID() }
 
 // StreamID is the group this track belongs too. This must be unique
 func (s *TrackLocalStaticSample) StreamID() string { return s.rtpTrack.StreamID() }
+
+// RID is the RTP stream identifier.
+func (s *TrackLocalStaticSample) RID() string { return s.rtpTrack.RID() }
 
 // Kind controls if this TrackLocal is audio or video
 func (s *TrackLocalStaticSample) Kind() RTPCodecType { return s.rtpTrack.Kind() }
@@ -262,9 +282,9 @@ func (s *TrackLocalStaticSample) WriteSample(sample media.Sample) error {
 
 	samples := uint32(sample.Duration.Seconds() * clockRate)
 	if sample.PrevDroppedPackets > 0 {
-		p.(rtp.Packetizer).SkipSamples(samples * uint32(sample.PrevDroppedPackets))
+		p.SkipSamples(samples * uint32(sample.PrevDroppedPackets))
 	}
-	packets := p.(rtp.Packetizer).Packetize(sample.Data, samples)
+	packets := p.Packetize(sample.Data, samples)
 
 	writeErrs := []error{}
 	for _, p := range packets {

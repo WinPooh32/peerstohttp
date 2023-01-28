@@ -2,6 +2,7 @@ package torrent
 
 import (
 	"github.com/RoaringBitmap/roaring"
+
 	"github.com/anacrolix/torrent/metainfo"
 )
 
@@ -20,7 +21,10 @@ type peerImpl interface {
 	connectionFlags() string
 	onClose()
 	onGotInfo(*metainfo.Info)
+	// Drop connection. This may be a no-op if there is no connection.
 	drop()
+	// Rebuke the peer
+	ban()
 	String() string
 	connStatusString() string
 

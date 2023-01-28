@@ -15,21 +15,10 @@
   <a href="https://travis-ci.org/pion/webrtc"><img src="https://travis-ci.org/pion/webrtc.svg?branch=master" alt="Build Status"></a>
   <a href="https://pkg.go.dev/github.com/pion/webrtc/v3"><img src="https://pkg.go.dev/badge/github.com/pion/webrtc/v3" alt="PkgGoDev"></a>
   <a href="https://codecov.io/gh/pion/webrtc"><img src="https://codecov.io/gh/pion/webrtc/branch/master/graph/badge.svg" alt="Coverage Status"></a>
-  <a href="https://goreportcard.com/report/github.com/pion/webrtc"><img src="https://goreportcard.com/badge/github.com/pion/webrtc" alt="Go Report Card"></a>
-  <a href="https://www.codacy.com/app/Sean-Der/webrtc"><img src="https://api.codacy.com/project/badge/Grade/18f4aec384894e6aac0b94effe51961d" alt="Codacy Badge"></a>
+  <a href="https://goreportcard.com/report/github.com/pion/webrtc/v3"><img src="https://goreportcard.com/badge/github.com/pion/webrtc/v3" alt="Go Report Card"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
 </p>
 <br>
-
-### New Release
-
-Pion WebRTC v3.0.0 has been released! See the [release notes](https://github.com/pion/webrtc/wiki/Release-WebRTC@v3.0.0) to learn about new features and breaking changes.
-
-If you aren't able to upgrade yet check the [tags](https://github.com/pion/webrtc/tags) for the latest `v2` release.
-
-We would love your feedback! Please create GitHub issues or join [the Slack channel](https://pion.ly/slack) to follow development and speak with the maintainers.
-
-----
 
 ### Usage
 [Go Modules](https://blog.golang.org/using-go-modules) are mandatory for using Pion WebRTC. So make sure you set `export GO111MODULE=on`, and explicitly specify `/v2` or `/v3` when importing.
@@ -96,8 +85,9 @@ This book is vendor agnostic and will not have any Pion specific information.
 * [Simulcast](https://github.com/pion/webrtc/tree/master/examples/simulcast)
 * [SVC](https://github.com/pion/rtp/blob/master/codecs/vp9_packet.go#L138)
 * [NACK](https://github.com/pion/interceptor/pull/4)
-* Full loss recovery and congestion control is not complete, see [pion/interceptor](https://github.com/pion/interceptor) for progress
-  * See [ion](https://github.com/pion/ion-sfu/tree/master/pkg/buffer) for how an implementor can do it today
+* [Sender/Receiver Reports](https://github.com/pion/interceptor/tree/master/pkg/report)
+* [Transport Wide Congestion Control Feedback](https://github.com/pion/interceptor/tree/master/pkg/twcc)
+* [Bandwidth Estimation](https://github.com/pion/webrtc/tree/master/examples/bandwidth-estimation-from-disk)
 
 #### Security
 * TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256 and TLS_ECDHE_ECDSA_WITH_AES_256_CBC_SHA for DTLS v1.2

@@ -9,10 +9,14 @@ import (
 	"github.com/pion/rtp"
 )
 
+// Factory provides an interface for constructing interceptors
+type Factory interface {
+	NewInterceptor(id string) (Interceptor, error)
+}
+
 // Interceptor can be used to add functionality to you PeerConnections by modifying any incoming/outgoing rtp/rtcp
 // packets, or sending your own packets as needed.
 type Interceptor interface {
-
 	// BindRTCPReader lets you modify any incoming RTCP packets. It is called once per sender/receiver, however this might
 	// change in the future. The returned method will be called once per packet batch.
 	BindRTCPReader(reader RTCPReader) RTCPReader
@@ -62,9 +66,6 @@ type RTCPReader interface {
 	Read([]byte, Attributes) (int, Attributes, error)
 }
 
-// Attributes are a generic key/value store used by interceptors
-type Attributes map[interface{}]interface{}
-
 // RTPWriterFunc is an adapter for RTPWrite interface
 type RTPWriterFunc func(header *rtp.Header, payload []byte, attributes Attributes) (int, error)
 
@@ -95,14 +96,4 @@ func (f RTCPWriterFunc) Write(pkts []rtcp.Packet, attributes Attributes) (int, e
 // Read a batch of rtcp packets
 func (f RTCPReaderFunc) Read(b []byte, a Attributes) (int, Attributes, error) {
 	return f(b, a)
-}
-
-// Get returns the attribute associated with key.
-func (a Attributes) Get(key interface{}) interface{} {
-	return a[key]
-}
-
-// Set sets the attribute associated with key to the given value.
-func (a Attributes) Set(key interface{}, val interface{}) {
-	a[key] = val
 }

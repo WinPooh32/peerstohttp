@@ -2,11 +2,13 @@ package udp
 
 import (
 	"context"
-	"log"
 	"net"
 
+	"github.com/anacrolix/log"
 	"github.com/anacrolix/missinggo/v2"
 )
+
+type listenPacketFunc func(network, addr string) (net.PacketConn, error)
 
 type NewConnClientOpts struct {
 	// The network to operate to use, such as "udp4", "udp", "udp6".
@@ -15,6 +17,10 @@ type NewConnClientOpts struct {
 	Host string
 	// If non-nil, forces either IPv4 or IPv6 in the UDP tracker wire protocol.
 	Ipv6 *bool
+	// Logger to use for internal errors.
+	Logger log.Logger
+	// Custom function to use as a substitute for net.ListenPacket
+	ListenPacket listenPacketFunc
 }
 
 // Manages a Client with a specific connection.
@@ -42,7 +48,7 @@ func (cc *ConnClient) reader() {
 		}
 		err = cc.d.Dispatch(b[:n], addr)
 		if err != nil {
-			log.Printf("dispatching packet received on %v: %v", cc.conn.LocalAddr(), err)
+			cc.newOpts.Logger.Levelf(log.Debug, "dispatching packet received on %v: %v", cc.conn.LocalAddr(), err)
 		}
 	}
 }
@@ -77,9 +83,18 @@ func (me clientWriter) Write(p []byte) (n int, err error) {
 }
 
 func NewConnClient(opts NewConnClientOpts) (cc *ConnClient, err error) {
-	conn, err := net.ListenPacket(opts.Network, ":0")
+	var conn net.PacketConn
+	if opts.ListenPacket != nil {
+		conn, err = opts.ListenPacket(opts.Network, ":0")
+	} else {
+		conn, err = net.ListenPacket(opts.Network, ":0")
+	}
+
 	if err != nil {
 		return
+	}
+	if opts.Logger.IsZero() {
+		opts.Logger = log.Default
 	}
 	cc = &ConnClient{
 		Client: Client{
@@ -97,17 +112,21 @@ func NewConnClient(opts NewConnClientOpts) (cc *ConnClient, err error) {
 	return
 }
 
-func (c *ConnClient) Close() error {
-	c.closed = true
-	return c.conn.Close()
+func (cc *ConnClient) Close() error {
+	cc.closed = true
+	return cc.conn.Close()
 }
 
-func (c *ConnClient) Announce(
+func (cc *ConnClient) Announce(
 	ctx context.Context, req AnnounceRequest, opts Options,
 ) (
 	h AnnounceResponseHeader, nas AnnounceResponsePeers, err error,
 ) {
-	return c.Client.Announce(ctx, req, opts, func(addr net.Addr) bool {
-		return ipv6(c.newOpts.Ipv6, c.newOpts.Network, addr)
+	return cc.Client.Announce(ctx, req, opts, func(addr net.Addr) bool {
+		return ipv6(cc.newOpts.Ipv6, cc.newOpts.Network, addr)
 	})
+}
+
+func (cc *ConnClient) LocalAddr() net.Addr {
+	return cc.conn.LocalAddr()
 }

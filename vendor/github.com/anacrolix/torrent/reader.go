@@ -245,24 +245,37 @@ func (r *reader) readOnceAt(ctx context.Context, b []byte, pos int64) (n int, er
 			err = nil
 			return
 		}
+		if r.t.closed.IsSet() {
+			err = fmt.Errorf("reading from closed torrent: %w", err)
+			return
+		}
 		r.t.cl.lock()
-		// TODO: Just reset pieces in the readahead window. This might help
-		// prevent thrashing with small caches and file and piece priorities.
-		r.log(log.Fstr("error reading torrent %s piece %d offset %d, %d bytes: %v",
-			r.t.infoHash.HexString(), firstPieceIndex, firstPieceOffset, len(b1), err))
-		if !r.t.updatePieceCompletion(firstPieceIndex) {
-			r.log(log.Fstr("piece %d completion unchanged", firstPieceIndex))
-		}
-		// Update the rest of the piece completions in the readahead window, without alerting to
-		// changes (since only the first piece, the one above, could have generated the read error
-		// we're currently handling).
-		if r.pieces.begin != firstPieceIndex {
-			panic(fmt.Sprint(r.pieces.begin, firstPieceIndex))
-		}
-		for index := r.pieces.begin + 1; index < r.pieces.end; index++ {
-			r.t.updatePieceCompletion(index)
-		}
-		r.t.cl.unlock()
+		// I think there's a panic here caused by the Client being closed before obtaining this
+		// lock. TestDropTorrentWithMmapStorageWhileHashing seems to tickle occasionally in CI.
+		func() {
+			// Just add exceptions already.
+			defer r.t.cl.unlock()
+			if r.t.closed.IsSet() {
+				// Can't update because Torrent's piece order is removed from Client.
+				return
+			}
+			// TODO: Just reset pieces in the readahead window. This might help
+			// prevent thrashing with small caches and file and piece priorities.
+			r.log(log.Fstr("error reading torrent %s piece %d offset %d, %d bytes: %v",
+				r.t.infoHash.HexString(), firstPieceIndex, firstPieceOffset, len(b1), err))
+			if !r.t.updatePieceCompletion(firstPieceIndex) {
+				r.log(log.Fstr("piece %d completion unchanged", firstPieceIndex))
+			}
+			// Update the rest of the piece completions in the readahead window, without alerting to
+			// changes (since only the first piece, the one above, could have generated the read error
+			// we're currently handling).
+			if r.pieces.begin != firstPieceIndex {
+				panic(fmt.Sprint(r.pieces.begin, firstPieceIndex))
+			}
+			for index := r.pieces.begin + 1; index < r.pieces.end; index++ {
+				r.t.updatePieceCompletion(index)
+			}
+		}()
 	}
 }
 
@@ -310,7 +323,7 @@ func (r *reader) Seek(off int64, whence int) (newPos int64, err error) {
 }
 
 func (r *reader) log(m log.Msg) {
-	r.t.logger.Log(m.Skip(1))
+	r.t.logger.LogLevel(log.Debug, m.Skip(1))
 }
 
 // Implementation inspired by https://news.ycombinator.com/item?id=27019613.

@@ -97,8 +97,8 @@ func (c *connCtx) ReadContext(ctx context.Context, b []byte) (int, error) {
 	if e := ctx.Err(); e != nil && n == 0 {
 		err = e
 	}
-	if err2 := errSetDeadline.Load(); err == nil && err2 != nil {
-		err = err2.(error)
+	if err2, ok := errSetDeadline.Load().(error); ok && err == nil && err2 != nil {
+		err = err2
 	}
 	return n, err
 }
@@ -118,6 +118,7 @@ func (c *connCtx) WriteContext(ctx context.Context, b []byte) (int, error) {
 	var errSetDeadline atomic.Value
 	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		select {
 		case <-ctx.Done():
 			// context canceled
@@ -131,7 +132,6 @@ func (c *connCtx) WriteContext(ctx context.Context, b []byte) (int, error) {
 			}
 		case <-done:
 		}
-		wg.Done()
 	}()
 
 	n, err := c.nextConn.Write(b)
@@ -141,8 +141,8 @@ func (c *connCtx) WriteContext(ctx context.Context, b []byte) (int, error) {
 	if e := ctx.Err(); e != nil && n == 0 {
 		err = e
 	}
-	if err2 := errSetDeadline.Load(); err == nil && err2 != nil {
-		err = err2.(error)
+	if err2, ok := errSetDeadline.Load().(error); ok && err == nil && err2 != nil {
+		err = err2
 	}
 	return n, err
 }

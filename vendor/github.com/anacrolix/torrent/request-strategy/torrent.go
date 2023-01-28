@@ -1,7 +1,6 @@
 package request_strategy
 
 type Torrent interface {
-	Piece(int) Piece
-	ChunksPerPiece() uint32
+	IgnorePiece(int) bool
 	PieceLength() int64
 }
